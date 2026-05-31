@@ -1,5 +1,6 @@
+import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { ffprobeBin } from './ffmpeg.js';
+import { ffprobeBin, ffmpegBin } from './ffmpeg.js';
 import { fileExists } from './fsx.js';
 
 /** Format a number of seconds as HH:MM:SS (zero-padded). */
@@ -22,4 +23,20 @@ export function probeDuration(file) {
   if (res.status !== 0) return 0;
   const dur = parseFloat(String(res.stdout).trim());
   return Number.isFinite(dur) ? dur : 0;
+}
+
+/** Convert a WAV in place to 16 kHz mono pcm_s16le (Whisper's required format). */
+export function ensure16kMono(file) {
+  if (!fileExists(file)) return;
+  const tmp = file.replace(/\.wav$/i, '') + '.16k.wav';
+  const res = spawnSync(
+    ffmpegBin(),
+    ['-hide_banner', '-loglevel', 'error', '-i', file, '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', tmp],
+    { encoding: 'utf8' }
+  );
+  if (res.status === 0 && fileExists(tmp)) {
+    fs.renameSync(tmp, file);
+  } else {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+  }
 }

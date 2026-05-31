@@ -37,11 +37,10 @@ merged into one chronological transcript. The "me vs. others" split is therefore
      installer from visualstudio.microsoft.com.
    - macOS: Xcode Command Line Tools (`xcode-select --install`) + `cmake`.
    - Linux: `build-essential` + `cmake`.
-4. **A system-audio loopback device** (this is the part that needs setup — there is no zero-config
-   way to capture what your speakers play):
-   - **Windows (your platform):** enable **Stereo Mix** *(Sound settings → More sound settings →
-     Recording → right-click → Show Disabled Devices → enable "Stereo Mix")*, **or** install
-     [VB-CABLE](https://vb-audio.com/Cable/) and route the meeting output to it.
+4. **System-audio capture** (to record the *other* participants):
+   - **Windows (your platform): nothing to install.** Jamus captures system audio via **WASAPI
+     loopback** of your default output device — built with `npm run build:wasapi` (uses the C#
+     compiler that ships with Windows). No Stereo Mix, no virtual cable.
    - **macOS:** `brew install blackhole-2ch`, then make a Multi-Output Device in Audio MIDI Setup.
    - **Linux:** use the PulseAudio/PipeWire `.monitor` source (already present).
 5. **🎧 Use headphones.** If the call plays through speakers, your mic re-records it and you get
@@ -56,13 +55,14 @@ merged into one chronological transcript. The "me vs. others" split is therefore
 ## Install
 
 ```bash
-npm install            # JS dependencies (vendors the whisper.cpp source)
-npm run build:whisper  # compiles the local whisper.cpp engine (one time)
-npm link               # optional: makes the `jamus` command global
+npm install     # JS dependencies (vendors the whisper.cpp source)
+npm run build   # compiles whisper.cpp + the WASAPI loopback recorder (one time)
+npm link        # optional: makes the `jamus` command global
 ```
 
-`npm run build:whisper` auto-detects your Visual Studio C++ environment on Windows and runs the CMake
-build. Without `npm link`, run commands as `node bin/jamus.js <command>` or `npm run <script>`.
+`npm run build` runs both `build:whisper` (auto-detects your Visual Studio C++ environment and runs the
+CMake build) and `build:wasapi` (compiles the Windows system-audio recorder). Without `npm link`, run
+commands as `node bin/jamus.js <command>` or `npm run <script>`.
 
 ---
 
@@ -151,7 +151,8 @@ bin/jamus.js          CLI entrypoint
 src/cli.js            commander wiring (devices/record/transcribe/run/models)
 src/config.js         config load + merge + persistence
 src/devices/          enumerate audio devices, detect loopback
-src/recorder/         per-OS ffmpeg args, process wrapper, dual-capture orchestrator
+src/recorder/         per-OS ffmpeg args, ffmpeg + WASAPI capture wrappers, dual-capture orchestrator
+native/               WASAPI loopback recorder (C#) + build output (Windows system audio)
 src/transcriber/      whisper.cpp wrapper + model manager
 src/pipeline/         session metadata, merge/label, transcribe orchestration
 src/output/           markdown + JSON sidecar writers
@@ -161,8 +162,10 @@ src/utils/            logger, fs, audio, ffmpeg helpers
 ## Troubleshooting
 
 - **"ffmpeg not found"** — install FFmpeg or set `JAMUS_FFMPEG`.
-- **`system.wav` is empty / silent** — your loopback isn't capturing. Re-check `jamus devices` and
-  make sure the meeting audio is routed to the loopback device (and that you're using headphones).
+- **`system.wav` is empty / silent (Windows)** — make sure audio is actually playing to your
+  **default output device** during the meeting (WASAPI loopback captures the default device). Switch
+  the default output in Sound settings to the device you're listening on. Run `npm run build:wasapi`
+  if `jamus devices` says the recorder isn't built.
 - **Same words appear twice** — your mic is picking up the speakers. Use headphones.
 - **Transcription is very slow** — `large-v3` is heavy on CPU. Use `--model large-v3-turbo` or
   `--model small.en`, or rebuild whisper.cpp with CUDA (see above).

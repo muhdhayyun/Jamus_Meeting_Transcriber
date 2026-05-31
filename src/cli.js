@@ -12,6 +12,7 @@ import { listAudioDevices } from './devices/enumerate.js';
 import { loopbackSetupHelp, pickLoopback, pickMic } from './devices/loopback.js';
 import { createSession, loadSession } from './pipeline/session.js';
 import { recordSession } from './recorder/recorder.js';
+import { wasapiBuilt, assertWasapiBuilt } from './recorder/wasapiCapture.js';
 import { transcribeSession } from './pipeline/transcribeSession.js';
 import { KNOWN_MODELS, validateModel, isModelDownloaded, ensureModel, isBuilt } from './transcriber/modelManager.js';
 
@@ -85,8 +86,18 @@ function cmdDevices() {
     }
   }
 
-  const loop = pickLoopback(devices);
   logger.info('');
+  if (os.platform() === 'win32') {
+    // On Windows, system audio is captured via WASAPI loopback — no device needed.
+    if (wasapiBuilt()) {
+      logger.success('System audio: captured automatically via WASAPI loopback of your default output device.');
+      logger.dim('  No Stereo Mix or virtual cable required. Just pick your microphone when recording.');
+    } else {
+      logger.warn('WASAPI loopback recorder not built yet — run:  npm run build:wasapi');
+    }
+    return;
+  }
+  const loop = pickLoopback(devices);
   if (loop) {
     logger.success(`System-audio loopback available: "${loop.name}"`);
   } else {
@@ -177,7 +188,7 @@ async function startRecording(cfg, opts) {
   logger.info('');
   logger.info(chalk.bold(`Recording "${session.title}"`));
   logger.dim(`  mic    → ${mic}`);
-  logger.dim(`  system → ${system}`);
+  logger.dim(`  system → ${system === 'wasapi' ? 'WASAPI loopback (default output device)' : system}`);
   logger.dim(`  files  → ${path.relative(process.cwd(), session.dir)}`);
   logger.info('');
 
@@ -198,14 +209,21 @@ async function resolveDevices(cfg, opts) {
     chose = true;
   }
   if (!system) {
-    const loop = pickLoopback(devices);
-    if (!loop && devices.every((d) => !d.isLoopbackCandidate)) {
-      logger.warn('No system-audio loopback detected.\n');
-      logger.dim(loopbackSetupHelp());
-      throw new Error('Set up a system-audio loopback (see above), then run "jamus devices" to confirm.');
+    if (os.platform() === 'win32') {
+      // Windows: capture system audio via WASAPI loopback of the default output device.
+      // No virtual device / Stereo Mix needed.
+      assertWasapiBuilt();
+      system = 'wasapi';
+    } else {
+      const loop = pickLoopback(devices);
+      if (!loop && devices.every((d) => !d.isLoopbackCandidate)) {
+        logger.warn('No system-audio loopback detected.\n');
+        logger.dim(loopbackSetupHelp());
+        throw new Error('Set up a system-audio loopback (see above), then run "jamus devices" to confirm.');
+      }
+      system = await pickDevice('Select your SYSTEM-AUDIO loopback (other speakers):', devices, loop?.id);
+      chose = true;
     }
-    system = await pickDevice('Select your SYSTEM-AUDIO loopback (other speakers):', devices, loop?.id);
-    chose = true;
   }
 
   if (chose && process.stdin.isTTY) {

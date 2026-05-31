@@ -52,7 +52,10 @@ src/
   recorder/
     platform.js             per-OS ffmpeg input args
     ffmpegProcess.js        spawn ffmpeg, graceful "q" stop, finalize WAV
+    wasapiCapture.js        spawn the WASAPI loopback recorder (Windows system audio)
     recorder.js             dual-capture orchestrator + start-skew offset
+native/
+    WasapiLoopbackRecorder.cs   dependency-free C# WASAPI loopback recorder (Windows)
   transcriber/
     modelManager.js         known models, validation, download status
     whisper.js              run whisper.cpp on a wav → [{start,end,text}] (JSON→SRT fallback)
@@ -78,7 +81,10 @@ transcripts/   <date>-<slug>.md and .json
 
 Two ffmpeg processes write 16 kHz mono `pcm_s16le` WAV (Whisper's native format).
 
-- **Windows (primary):** `-f dshow -i audio="<name>"`; loopback via Stereo Mix or VB-CABLE.
+- **Windows (primary):** mic via `-f dshow -i audio="<name>"`. **System audio via WASAPI loopback**
+  (`native/wasapi-loopback.exe`, a dependency-free C# helper compiled with the built-in `csc.exe`) —
+  captures the default render endpoint, **no Stereo Mix / virtual cable required**. Its output is
+  normalized to 16 kHz mono with FFmpeg after capture.
 - **macOS:** `-f avfoundation -i ":<index>"`; loopback via BlackHole + Multi-Output Device.
 - **Linux:** `-f pulse -i <source>`; loopback via the sink `.monitor` source.
 
@@ -133,7 +139,7 @@ First run prompts for mic + loopback and saves them to `~/.jamus/config.json`.
 
 | Risk | Mitigation |
 |---|---|
-| No loopback configured | `jamus devices` detects & guides; record fails fast with instructions |
+| Capturing system audio | Windows: WASAPI loopback (zero config). mac/Linux: loopback device; `jamus devices` guides |
 | Mic echoes meeting audio → double text | Recommend headphones |
 | Two-process clock drift | Shared start timestamp + offset |
 | Hard-killed ffmpeg → corrupt WAV | Graceful `q` stop, SIGKILL only on timeout |

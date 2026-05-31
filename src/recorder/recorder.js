@@ -1,17 +1,22 @@
+import os from 'node:os';
 import { buildCaptureArgs } from './platform.js';
 import { FfmpegCapture } from './ffmpegProcess.js';
+import { WasapiCapture } from './wasapiCapture.js';
 import { saveSession } from '../pipeline/session.js';
 import { logger } from '../utils/logger.js';
-import { probeDuration } from '../utils/audio.js';
+import { probeDuration, ensure16kMono } from '../utils/audio.js';
 import { fileSize } from '../utils/fsx.js';
 
+const isWin = os.platform() === 'win32';
+
 /**
- * Record a session's two audio sources (mic + system loopback) in parallel.
+ * Record a session's two audio sources (mic + system) in parallel.
  *
- * `waitForStop` is an async function that resolves when the user wants to stop
- * (Enter key, Ctrl+C, etc.). The caller owns that interaction so this stays testable.
+ * On Windows the system stream is captured via WASAPI loopback (no Stereo Mix /
+ * virtual cable needed). On other platforms it uses an FFmpeg loopback device.
+ * The mic stream always uses FFmpeg.
  *
- * Returns the (mutated) session with offsets and finalized file info.
+ * `waitForStop` resolves when the user wants to stop (Enter / Ctrl+C).
  */
 export async function recordSession(cfg, session, { waitForStop }) {
   const { sampleRate, channels, codec } = cfg.audio;
@@ -20,20 +25,24 @@ export async function recordSession(cfg, session, { waitForStop }) {
     label: 'mic',
     args: buildCaptureArgs({ deviceId: session.devices.mic, outFile: session.files.mic, sampleRate, channels, codec }),
   });
-  const system = new FfmpegCapture({
-    label: 'system',
-    args: buildCaptureArgs({ deviceId: session.devices.system, outFile: session.files.system, sampleRate, channels, codec }),
-  });
+
+  const systemViaWasapi = isWin && session.devices.system === 'wasapi';
+  const system = systemViaWasapi
+    ? new WasapiCapture({ label: 'system', outFile: session.files.system })
+    : new FfmpegCapture({
+        label: 'system',
+        args: buildCaptureArgs({ deviceId: session.devices.system, outFile: session.files.system, sampleRate, channels, codec }),
+      });
 
   // Start as close together as possible, then record the wall-clock skew for alignment.
   const micStart = mic.start();
   const systemStart = system.start();
   session.offsets.systemMinusMicMs = systemStart - micStart;
 
-  // If a process dies immediately (bad device, permissions), surface it fast.
+  // Surface immediate failures (bad device, permissions, missing binary).
   await new Promise((r) => setTimeout(r, 400));
   assertAlive(mic, 'microphone');
-  assertAlive(system, 'system audio');
+  assertAlive(system, systemViaWasapi ? 'system audio (WASAPI loopback)' : 'system audio');
 
   logger.success('Recording… speak normally. Press Enter (or Ctrl+C) to stop.');
 
@@ -42,7 +51,9 @@ export async function recordSession(cfg, session, { waitForStop }) {
   logger.step('Finalizing recording…');
   await Promise.all([mic.stop(), system.stop()]);
 
-  // Verify we actually captured something on each stream.
+  // WASAPI captures at the device sample rate; normalize to 16 kHz mono for Whisper.
+  if (systemViaWasapi) ensure16kMono(session.files.system);
+
   session.results = {
     mic: summarize(session.files.mic, mic),
     system: summarize(session.files.system, system),
@@ -59,8 +70,8 @@ function assertAlive(capture, human) {
   if (capture.proc && capture.proc.exitCode !== null && capture.proc.exitCode !== 0) {
     throw new Error(
       `${human} capture exited immediately (code ${capture.proc.exitCode}).\n` +
-        `ffmpeg said:\n${capture.stderr.trim() || '(no output)'}\n` +
-        `Check the device name with "jamus devices".`
+        `Details:\n${capture.stderr.trim() || '(no output)'}\n` +
+        `Check the device with "jamus devices".`
     );
   }
 }

@@ -16,6 +16,9 @@ transcripts/*
 .jamus/
 *.local.json
 
+# Compiled native helper (rebuilt via `npm run build:wasapi`)
+native/*.exe
+
 # Logs
 *.log
 npm-debug.log*

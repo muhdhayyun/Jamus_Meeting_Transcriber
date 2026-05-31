@@ -14,7 +14,9 @@
     "devices": "node bin/jamus.js devices",
     "record": "node bin/jamus.js record",
     "run": "node bin/jamus.js run",
-    "build:whisper": "node scripts/build-whisper.mjs"
+    "build": "node scripts/build-whisper.mjs && node scripts/build-wasapi.mjs",
+    "build:whisper": "node scripts/build-whisper.mjs",
+    "build:wasapi": "node scripts/build-wasapi.mjs"
   },
   "keywords": [
     "meeting",
