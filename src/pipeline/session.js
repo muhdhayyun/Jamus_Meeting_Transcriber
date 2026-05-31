@@ -31,6 +31,15 @@ export function createSession(cfg, { title, mic, system, mode }) {
   return session;
 }
 
+/**
+ * Base filename for a session's transcript outputs. Uses the unique, timestamped
+ * session id so two meetings with the same title/date never overwrite each other.
+ * e.g. "20260601-143022-my-meeting"
+ */
+export function outputBaseName(session) {
+  return session.id;
+}
+
 export function saveSession(session) {
   // Strip absolute-only convenience fields we don't need to persist verbatim; keep everything useful.
   writeJson(session.metaFile, session);

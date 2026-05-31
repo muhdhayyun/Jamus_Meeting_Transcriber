@@ -67,6 +67,38 @@ export function assertBuilt() {
   }
 }
 
+// ---- Voice Activity Detection (VAD) model ------------------------------
+// Gates out non-speech so Whisper stops hallucinating filler ("thank you", etc.)
+// on silent/quiet audio.
+const VAD_MODEL = 'silero-v5.1.2';
+
+export function vadModelPath() {
+  return path.join(modelsDir(), `ggml-${VAD_MODEL}.bin`);
+}
+
+export function isVadDownloaded() {
+  return fs.existsSync(vadModelPath());
+}
+
+/** Download the Silero VAD model if missing. Returns false if it couldn't be obtained. */
+export function ensureVadModel() {
+  if (isVadDownloaded()) return true;
+  const dir = modelsDir();
+  logger.step('Downloading the speech-detection (VAD) model (first use only)…');
+  let result;
+  if (isWin) {
+    const script = path.join(dir, 'download-vad-model.cmd');
+    result = spawnSync('cmd.exe', ['/c', script, VAD_MODEL], { cwd: dir, stdio: 'inherit' });
+  } else {
+    result = spawnSync('sh', [path.join(dir, 'download-vad-model.sh'), VAD_MODEL], { cwd: dir, stdio: 'inherit' });
+  }
+  if (result.status !== 0 || !isVadDownloaded()) {
+    logger.warn('Could not download the VAD model; continuing without speech-gating.');
+    return false;
+  }
+  return true;
+}
+
 /** Download a model via whisper.cpp's downloader if it isn't already present. */
 export function ensureModel(name) {
   validateModel(name);

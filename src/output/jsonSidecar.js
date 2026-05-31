@@ -1,5 +1,6 @@
 import path from 'node:path';
-import { writeJson, slugify } from '../utils/fsx.js';
+import { writeJson } from '../utils/fsx.js';
+import { outputBaseName } from '../pipeline/session.js';
 
 /**
  * Write a structured JSON sidecar next to the Markdown transcript.
@@ -7,7 +8,7 @@ import { writeJson, slugify } from '../utils/fsx.js';
  * @returns {string} the written file path.
  */
 export function writeJsonSidecar(cfg, { session, timeline, model, durationSec, speakers }) {
-  const file = path.join(cfg.resolved.transcripts, `${session.date}-${slugify(session.title)}.json`);
+  const file = path.join(cfg.resolved.transcripts, `${outputBaseName(session)}.json`);
   writeJson(file, {
     title: session.title,
     date: session.date,

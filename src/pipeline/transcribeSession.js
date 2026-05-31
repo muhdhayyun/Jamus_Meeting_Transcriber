@@ -12,14 +12,15 @@ import { logger } from '../utils/logger.js';
  */
 export async function transcribeSession(cfg, session, { model, language, labels }) {
   const sysOffsetSec = (session.offsets?.systemMinusMicMs ?? 0) / 1000;
+  const vad = cfg.vad !== false; // speech-gating on by default
 
   const spinner = ora({ text: `Transcribing your microphone with ${model}…`, isEnabled: process.stdout.isTTY }).start();
   let micSegments = [];
   let systemSegments = [];
   try {
-    micSegments = await transcribeFile(session.files.mic, { model, language });
+    micSegments = await transcribeFile(session.files.mic, { model, language, vad });
     spinner.text = `Transcribing participants (system audio) with ${model}…`;
-    systemSegments = await transcribeFile(session.files.system, { model, language });
+    systemSegments = await transcribeFile(session.files.system, { model, language, vad });
     spinner.succeed('Transcription complete.');
   } catch (err) {
     spinner.fail('Transcription failed.');

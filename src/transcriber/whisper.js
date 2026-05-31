@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { assertBuilt, ensureModel, binaryPath, modelPath, validateModel } from './modelManager.js';
+import { assertBuilt, ensureModel, binaryPath, modelPath, validateModel, ensureVadModel, vadModelPath } from './modelManager.js';
 import { logger } from '../utils/logger.js';
 import { fileExists, fileSize } from '../utils/fsx.js';
 
@@ -10,7 +10,7 @@ import { fileExists, fileSize } from '../utils/fsx.js';
  *
  * @returns {Promise<Array<{start:number,end:number,text:string}>>} segments in seconds.
  */
-export async function transcribeFile(file, { model = 'large-v3', language = 'auto' } = {}) {
+export async function transcribeFile(file, { model = 'large-v3', language = 'auto', vad = true } = {}) {
   validateModel(model);
   if (!fileExists(file) || fileSize(file) === 0) {
     logger.warn(`Skipping transcription — empty or missing file: ${file}`);
@@ -29,6 +29,12 @@ export async function transcribeFile(file, { model = 'large-v3', language = 'aut
     '-of', outBase,
     '-np',                 // no progress prints
   ];
+
+  // Voice Activity Detection: skip non-speech so Whisper doesn't hallucinate
+  // filler text ("thank you", "thanks for watching") on silent/quiet audio.
+  if (vad && ensureVadModel()) {
+    args.push('--vad', '--vad-model', vadModelPath());
+  }
 
   const started = Date.now();
   await runBinary(binaryPath(), args);

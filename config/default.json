@@ -17,6 +17,7 @@
   },
   "recordMode": "dual",
   "coalesceSpeakerTurns": true,
+  "vad": true,
   "devices": {
     "mic": null,
     "system": null

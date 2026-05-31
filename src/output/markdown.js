@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { ensureDir, slugify } from '../utils/fsx.js';
+import { ensureDir } from '../utils/fsx.js';
 import { formatTimestamp } from '../utils/audio.js';
+import { outputBaseName } from '../pipeline/session.js';
 
 /**
  * Render a merged timeline to a Markdown transcript and write it to disk.
@@ -30,7 +31,7 @@ export function writeMarkdown(cfg, { session, timeline, model, durationSec, spea
   }
 
   const dir = ensureDir(cfg.resolved.transcripts);
-  const file = path.join(dir, `${session.date}-${slugify(session.title)}.md`);
+  const file = path.join(dir, `${outputBaseName(session)}.md`);
   fs.writeFileSync(file, lines.join('\n'), 'utf8');
   return file;
 }
