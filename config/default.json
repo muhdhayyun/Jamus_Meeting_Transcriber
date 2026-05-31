@@ -1,5 +1,5 @@
 {
-  "model": "large-v3",
+  "model": "large-v3-turbo",
   "language": "auto",
   "audio": {
     "sampleRate": 16000,

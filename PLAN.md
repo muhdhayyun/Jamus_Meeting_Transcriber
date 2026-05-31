@@ -4,7 +4,8 @@
 > **Scope:** record audio → transcribe locally with Whisper → write a speaker-separated `.md` transcript.
 > **Out of scope:** AI summaries / insights / action items (handled separately by the user).
 
-**Confirmed build decisions:** primary OS **Windows** (`dshow`/WASAPI backend); default model **`large-v3`**.
+**Confirmed build decisions:** primary OS **Windows** (`dshow` mic + WASAPI loopback for system audio);
+default model **`large-v3-turbo`** (v3-family accuracy, much faster on CPU than full `large-v3`).
 
 ---
 
@@ -107,8 +108,8 @@ auto-loading the Visual Studio `vcvars64` environment on Windows.
 2. Run `whisper-cli.exe -m <model> -f <wav> -l <lang> -oj -of <out>` → `<out>.json`.
 3. Parse JSON (`offsets.from/to` in ms) → `[{start,end,text}]`; strip `[BLANK_AUDIO]`-style tokens.
 
-Default model `large-v3` (configurable via `--model` / config). GPU is a *compile-time* whisper.cpp
-option (`-DGGML_CUDA=1` rebuild), not a runtime flag.
+Default model `large-v3-turbo` (configurable via `--model` / config; `large-v3` for max accuracy).
+GPU is a *compile-time* whisper.cpp option (`-DGGML_CUDA=1` rebuild), not a runtime flag.
 
 ---
 

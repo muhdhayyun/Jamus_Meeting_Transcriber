@@ -46,9 +46,9 @@ merged into one chronological transcript. The "me vs. others" split is therefore
 5. **🎧 Use headphones.** If the call plays through speakers, your mic re-records it and you get
    duplicated text in both streams.
 
-> The default model is `large-v3` (~3 GB, best accuracy, multilingual). It downloads automatically on
-> first use and is **slow on CPU** — for a faster experience use `--model large-v3-turbo` (~1.5 GB) or
-> `--model small.en`. See `jamus models` for the full list.
+> The default model is `large-v3-turbo` (~1.5 GB) — v3-family accuracy at 2–4× the speed of full
+> `large-v3` on CPU. For maximum accuracy use `--model large-v3`; for max speed `--model small.en`.
+> See `jamus models` for the full list.
 
 ---
 
@@ -99,7 +99,8 @@ jamus transcribe 20260531-101500-weekly-standup
 ### Useful options
 
 ```bash
-jamus run --model large-v3-turbo     # faster v3 model (~1.5 GB); small.en is faster still
+jamus run --model large-v3           # maximum accuracy (~3 GB, slower on CPU)
+jamus run --model small.en           # fastest, lower accuracy
 jamus run --me "Hayyun" --others "Team"   # custom speaker labels
 jamus transcribe <session> --language en  # force a language instead of auto-detect
 
