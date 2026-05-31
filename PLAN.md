@@ -7,6 +7,12 @@
 This document is the implementation plan. It is intentionally detailed so it can be handed to an
 implementation pass (Sonnet) and built without re-deriving design decisions.
 
+> **Confirmed build decisions:**
+> - **Primary target OS: Windows.** Implement and test the `dshow`/WASAPI capture backend first;
+>   macOS/Linux backends follow the same `recorder/platform.js` interface.
+> - **Default Whisper model: `large-v3`** (best accuracy, multilingual). GPU build of whisper.cpp
+>   strongly recommended given its size/speed; `--model` still allows lighter models.
+
 ---
 
 ## 1. Goals & Non-Goals
@@ -128,6 +134,15 @@ Jamus records **two FFmpeg processes started as close together as possible**, ea
 > but requires the user to build an aggregate device. Document as an advanced option.
 
 ### Per-OS input arguments (`recorder/platform.js`)
+> Build/verify the **Windows** path first (confirmed primary OS); the others share the same interface.
+
+**Windows (`dshow`) — PRIMARY:**
+```
+ffmpeg -f dshow -i audio="<Microphone name>"            -ac 1 -ar 16000 -c:a pcm_s16le mic.wav
+# loopback via Stereo Mix OR a virtual cable (VB-CABLE) OR ffmpeg WASAPI loopback build
+ffmpeg -f dshow -i audio="Stereo Mix (Realtek...)"      -ac 1 -ar 16000 -c:a pcm_s16le system.wav
+# enumerate devices: ffmpeg -list_devices true -f dshow -i dummy
+```
 
 **macOS (`avfoundation`):**
 ```
@@ -135,13 +150,6 @@ Jamus records **two FFmpeg processes started as close together as possible**, ea
 ffmpeg -f avfoundation -i ":<mic_index>"      -ac 1 -ar 16000 -c:a pcm_s16le mic.wav
 # system loopback (a virtual device, e.g. BlackHole, shows up as an avfoundation audio device)
 ffmpeg -f avfoundation -i ":<blackhole_index>" -ac 1 -ar 16000 -c:a pcm_s16le system.wav
-```
-
-**Windows (`dshow`):**
-```
-ffmpeg -f dshow -i audio="<Microphone name>"            -ac 1 -ar 16000 -c:a pcm_s16le mic.wav
-# loopback via Stereo Mix OR a virtual cable (VB-CABLE) OR ffmpeg WASAPI loopback build
-ffmpeg -f dshow -i audio="Stereo Mix (Realtek...)"      -ac 1 -ar 16000 -c:a pcm_s16le system.wav
 ```
 
 **Linux (`pulse` / PipeWire-pulse):**
@@ -199,7 +207,10 @@ double transcription. Recommend headphones; note future echo/cross-talk suppress
 | `medium.en` | ~1.5 GB | slow | higher accuracy |
 | `large-v3` | ~3 GB | slowest | best accuracy, multilingual |
 
-`.en` variants are English-only and faster; default `small.en`, allow override (`--model`, config).
+`.en` variants are English-only and faster. **Default: `large-v3`** (confirmed), with `--model`/config
+override. Because `large-v3` is ~3 GB and slow on CPU, the implementation should: (a) detect and use a
+GPU build of whisper.cpp when available (CUDA on Windows), (b) show clear progress, and (c) document
+falling back to `small.en` for quick drafts on weaker hardware.
 
 ---
 
@@ -340,6 +351,6 @@ persist their device choices to `~/.jamus/config.json`.
 | Mic echoes meeting audio → double text | Recommend headphones; future cross-talk suppression. |
 | Two-process clock drift | Shared start timestamp + offset; offer mode B (stereo, zero drift). |
 | ffmpeg killed hard → corrupt WAV | Graceful `q`/SIGTERM stop that finalizes the header. |
-| Large model = slow on CPU | Default `small.en`; expose `--model`; document GPU build of whisper.cpp. |
+| `large-v3` slow on CPU | Prefer CUDA/GPU build of whisper.cpp on Windows; expose `--model` to drop to `small.en` for drafts. |
 | First-run model download size/time | Pre-flight `jamus models --download`; progress UI. |
 ```
