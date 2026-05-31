@@ -108,9 +108,10 @@ jamus models                         # list models, build status, and which are 
 jamus models --download large-v3     # pre-fetch a model so it's ready offline
 ```
 
-> GPU acceleration is a *compile-time* option in whisper.cpp. To use an NVIDIA GPU, rebuild with CUDA:
-> `cmake -B build -DGGML_CUDA=1` inside `node_modules/nodejs-whisper/cpp/whisper.cpp` (from a VS
-> Developer prompt), then `cmake --build build --config Release`.
+> **GPU acceleration (NVIDIA):** rebuild whisper.cpp with CUDA for a huge speedup. Install the
+> NVIDIA CUDA Toolkit, then run `npm run build:whisper:cuda` (auto-detects the toolkit, targets the
+> GPU, and bundles the needed cuBLAS DLLs next to the binary). On an RTX 4070 SUPER this took
+> transcription from ~real-time to **~30× real-time** (a 30-min meeting in well under a minute).
 
 ---
 

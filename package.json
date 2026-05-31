@@ -16,6 +16,7 @@
     "run": "node bin/jamus.js run",
     "build": "node scripts/build-whisper.mjs && node scripts/build-wasapi.mjs",
     "build:whisper": "node scripts/build-whisper.mjs",
+    "build:whisper:cuda": "node scripts/build-whisper.mjs --cuda",
     "build:wasapi": "node scripts/build-wasapi.mjs"
   },
   "keywords": [
