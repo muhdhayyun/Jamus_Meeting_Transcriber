@@ -65,6 +65,8 @@ src/
     jsonSidecar.js          structured .json for the user's AI step
   utils/
     logger.js  fsx.js  audio.js  ffmpeg.js
+scripts/
+    build-whisper.mjs       one-time CMake build of whisper.cpp (auto-loads VS env on Windows)
 models/        downloaded ggml models (gitignored, managed by nodejs-whisper)
 recordings/    per-session mic.wav + system.wav + session.json (gitignored)
 transcripts/   <date>-<slug>.md and .json
@@ -87,13 +89,20 @@ system timestamps before merge. (Optional future "stereo aggregate" mode = zero 
 
 ---
 
-## 5. Transcription — `transcriber/whisper.js`
+## 5. Transcription — `transcriber/whisper.js` + `transcriber/modelManager.js`
 
-1. `nodewhisper(wav, { modelName, autoDownloadModelName, withCuda, whisperOptions:{ outputInJson, outputInSrt } })`.
-2. Parse the generated JSON (offsets in ms) → `[{start,end,text}]`; fall back to SRT parsing.
-3. Strip `[BLANK_AUDIO]`-style tokens, clean whitespace, delete intermediate artifacts.
+The `nodejs-whisper` npm package is used only to **vendor the whisper.cpp source + downloader**; Jamus
+drives the compiled binary directly (the wrapper artificially restricts model names and blocks
+`large-v3`). `npm run build:whisper` (`scripts/build-whisper.mjs`) compiles whisper.cpp once via CMake,
+auto-loading the Visual Studio `vcvars64` environment on Windows.
 
-Default model `large-v3` (configurable). `--cuda` / `JAMUS_CUDA` selects the GPU build.
+1. `modelManager.ensureModel(name)` → download `ggml-<name>.bin` via whisper.cpp's
+   `download-ggml-model.cmd/.sh` if missing. Full model list incl. `large-v3`, `large-v3-turbo`.
+2. Run `whisper-cli.exe -m <model> -f <wav> -l <lang> -oj -of <out>` → `<out>.json`.
+3. Parse JSON (`offsets.from/to` in ms) → `[{start,end,text}]`; strip `[BLANK_AUDIO]`-style tokens.
+
+Default model `large-v3` (configurable via `--model` / config). GPU is a *compile-time* whisper.cpp
+option (`-DGGML_CUDA=1` rebuild), not a runtime flag.
 
 ---
 
@@ -111,8 +120,8 @@ Markdown: `**[HH:MM:SS] Speaker:** text`. JSON: `{ title, date, durationSec, mod
 ```
 jamus devices                              list inputs, detect loopback, print setup help
 jamus record   [--title --mic --system --mode]      record → session
-jamus transcribe <session> [--model --language --me --others --cuda]
-jamus run      [--title --mic --system --model --me --others --language --cuda]   record→transcribe
+jamus transcribe <session> [--model --language --me --others]
+jamus run      [--title --mic --system --model --me --others --language]   record→transcribe
 jamus models   [--list | --download <name>]
 ```
 

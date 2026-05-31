@@ -13,7 +13,8 @@
     "start": "node bin/jamus.js",
     "devices": "node bin/jamus.js devices",
     "record": "node bin/jamus.js record",
-    "run": "node bin/jamus.js run"
+    "run": "node bin/jamus.js run",
+    "build:whisper": "node scripts/build-whisper.mjs"
   },
   "keywords": [
     "meeting",

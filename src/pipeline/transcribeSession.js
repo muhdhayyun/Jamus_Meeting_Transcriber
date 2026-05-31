@@ -10,16 +10,16 @@ import { logger } from '../utils/logger.js';
  * Transcribe both streams of a session, merge them, and write the .md + .json outputs.
  * @returns {{ mdFile, jsonFile, timeline }}
  */
-export async function transcribeSession(cfg, session, { model, language, withCuda, labels }) {
+export async function transcribeSession(cfg, session, { model, language, labels }) {
   const sysOffsetSec = (session.offsets?.systemMinusMicMs ?? 0) / 1000;
 
   const spinner = ora({ text: `Transcribing your microphone with ${model}…`, isEnabled: process.stdout.isTTY }).start();
   let micSegments = [];
   let systemSegments = [];
   try {
-    micSegments = await transcribeFile(session.files.mic, { model, language, withCuda });
+    micSegments = await transcribeFile(session.files.mic, { model, language });
     spinner.text = `Transcribing participants (system audio) with ${model}…`;
-    systemSegments = await transcribeFile(session.files.system, { model, language, withCuda });
+    systemSegments = await transcribeFile(session.files.system, { model, language });
     spinner.succeed('Transcription complete.');
   } catch (err) {
     spinner.fail('Transcription failed.');

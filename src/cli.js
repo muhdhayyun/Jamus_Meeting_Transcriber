@@ -1,7 +1,6 @@
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import { spawnSync } from 'node:child_process';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { select } from '@inquirer/prompts';
@@ -14,8 +13,7 @@ import { loopbackSetupHelp, pickLoopback, pickMic } from './devices/loopback.js'
 import { createSession, loadSession } from './pipeline/session.js';
 import { recordSession } from './recorder/recorder.js';
 import { transcribeSession } from './pipeline/transcribeSession.js';
-import { KNOWN_MODELS, validateModel, isModelDownloaded } from './transcriber/modelManager.js';
-import { transcribeFile } from './transcriber/whisper.js';
+import { KNOWN_MODELS, validateModel, isModelDownloaded, ensureModel, isBuilt } from './transcriber/modelManager.js';
 
 export async function run(argv) {
   const program = new Command();
@@ -46,7 +44,6 @@ export async function run(argv) {
     .option('--language <lang>', 'language code (or "auto")')
     .option('--me <name>', 'label for your own voice')
     .option('--others <name>', 'label for other participants')
-    .option('--cuda', 'use the CUDA/GPU build of whisper.cpp')
     .action((sessionRef, opts) => cmdTranscribe(sessionRef, opts));
 
   program
@@ -60,7 +57,6 @@ export async function run(argv) {
     .option('--language <lang>', 'language code (or "auto")')
     .option('--me <name>', 'label for your own voice')
     .option('--others <name>', 'label for other participants')
-    .option('--cuda', 'use the CUDA/GPU build of whisper.cpp')
     .action((opts) => cmdRun(opts));
 
   program
@@ -121,7 +117,6 @@ async function cmdTranscribe(sessionRef, opts) {
   await transcribeSession(cfg, session, {
     model,
     language: opts.language || cfg.language,
-    withCuda: !!opts.cuda || !!process.env.JAMUS_CUDA,
     labels,
   });
 }
@@ -142,7 +137,6 @@ async function cmdRun(opts) {
   await transcribeSession(cfg, session, {
     model,
     language: opts.language || cfg.language,
-    withCuda: !!opts.cuda || !!process.env.JAMUS_CUDA,
     labels,
   });
 }
@@ -152,13 +146,13 @@ async function cmdModels(opts) {
   const cfg = loadConfig();
   if (opts.download) {
     const name = validateModel(opts.download);
-    assertFfmpegAvailable();
-    logger.step(`Downloading Whisper model "${name}" (this can take a while for large models)…`);
-    await predownloadModel(cfg, name);
+    ensureModel(name);
     logger.success(`Model "${name}" is ready.`);
     return;
   }
   logger.info(chalk.bold('\nWhisper models\n'));
+  logger.info(`  whisper.cpp built: ${isBuilt() ? chalk.green('yes') : chalk.red('no — run `npm run build:whisper`')}`);
+  logger.info('');
   for (const m of KNOWN_MODELS) {
     const here = isModelDownloaded(m);
     const mark = here ? chalk.green('✔ downloaded') : chalk.dim('– not downloaded');
@@ -245,17 +239,4 @@ function waitForStop() {
     rl.on('line', done);
     process.once('SIGINT', done);
   });
-}
-
-/** Force a model download by transcribing a short silent clip. */
-async function predownloadModel(cfg, name) {
-  const tmp = path.join(os.tmpdir(), `jamus-silence-${Date.now()}.wav`);
-  const r = spawnSync(
-    process.env.JAMUS_FFMPEG || 'ffmpeg',
-    ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '0.3', '-c:a', 'pcm_s16le', '-y', tmp],
-    { encoding: 'utf8' }
-  );
-  if (r.status !== 0) throw new Error(`Could not create a temp audio file for model download: ${r.stderr}`);
-  await transcribeFile(tmp, { model: name, withCuda: !!process.env.JAMUS_CUDA });
-  try { (await import('node:fs')).unlinkSync(tmp); } catch { /* ignore */ }
 }

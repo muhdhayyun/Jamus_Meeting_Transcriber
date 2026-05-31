@@ -26,18 +26,26 @@ function listWindows() {
   const lines = text.split('\n');
 
   const devices = [];
+  // FFmpeg >= 7/8 format: each device line is tagged with "(audio)" or "(video)".
+  // e.g.  [in#0 @ ...] "Microphone (fifine Microphone)" (audio)
+  for (const line of lines) {
+    if (/Alternative name/i.test(line)) continue;
+    const tagged = line.match(/"([^"]+)"\s*\((audio|video)\)/i);
+    if (tagged && tagged[2].toLowerCase() === 'audio') {
+      const name = tagged[1];
+      devices.push({ id: name, name, ...classify(name) });
+    }
+  }
+  if (devices.length) return { platform, backend: 'dshow', devices };
+
+  // Fallback for the older format with "DirectShow audio devices" section headers.
   let inAudio = false;
   for (const line of lines) {
     if (/DirectShow audio devices/i.test(line)) { inAudio = true; continue; }
     if (/DirectShow video devices/i.test(line)) { inAudio = false; continue; }
-    if (!inAudio) continue;
-    // Match the quoted device name; skip the "Alternative name" lines.
-    if (/Alternative name/i.test(line)) continue;
+    if (!inAudio || /Alternative name/i.test(line)) continue;
     const m = line.match(/"([^"]+)"/);
-    if (m) {
-      const name = m[1];
-      devices.push({ id: name, name, ...classify(name) });
-    }
+    if (m) devices.push({ id: m[1], name: m[1], ...classify(m[1]) });
   }
   return { platform, backend: 'dshow', devices };
 }
