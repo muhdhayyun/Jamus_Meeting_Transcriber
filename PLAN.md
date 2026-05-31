@@ -66,14 +66,13 @@ native/
     transcribeSession.js    transcribe both streams → merge → write outputs
   output/
     markdown.js             render timeline → .md
-    jsonSidecar.js          structured .json for the user's AI step
   utils/
     logger.js  fsx.js  audio.js  ffmpeg.js
 scripts/
     build-whisper.mjs       one-time CMake build of whisper.cpp (auto-loads VS env on Windows)
 models/        downloaded ggml models (gitignored, managed by nodejs-whisper)
 recordings/    per-session mic.wav + system.wav + session.json (gitignored)
-transcripts/   <date>-<slug>.md and .json
+transcripts/   <session-id>.md
 ```
 
 ---
@@ -116,7 +115,7 @@ GPU is a *compile-time* whisper.cpp option (`-DGGML_CUDA=1` rebuild), not a runt
 ## 6. Merge & output
 
 `pipeline/merge.js`: tag mic→`Me`, system→`Participants` (+offset), sort by start, optionally coalesce
-consecutive same-speaker turns. `output/markdown.js` + `output/jsonSidecar.js` write the two files.
+consecutive same-speaker turns. `output/markdown.js` writes the `.md` transcript.
 
 Markdown: `**[HH:MM:SS] Speaker:** text`. JSON: `{ title, date, durationSec, model, speakers, segments[] }`.
 

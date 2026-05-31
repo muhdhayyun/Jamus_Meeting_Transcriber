@@ -6,7 +6,7 @@ and **your system audio** as two separate streams, transcribes them locally with
 everyone else in the call.
 
 > **Scope:** transcript only. No summaries / insights / action items (that's handled separately).
-> Every transcript also gets a `.json` sidecar so you can feed it into your own AI step.
+> Output is a clean Markdown (`.md`) transcript per meeting.
 
 ## How speaker separation works
 
@@ -85,9 +85,8 @@ jamus run --title "Weekly Standup"
 - On first use it asks you to pick your **mic** and **system-audio loopback** (choices are saved to
   `~/.jamus/config.json` for next time).
 - Recording starts. **Press Enter (or Ctrl+C) to stop.**
-- It then transcribes both streams and writes:
-  - `transcripts/<date>-<title>.md`   — the readable transcript
-  - `transcripts/<date>-<title>.json` — structured segments for your AI step
+- It then transcribes both streams and writes the readable transcript to
+  `transcripts/<session-id>.md`.
 
 ### 3. Or split recording and transcription
 
@@ -157,7 +156,7 @@ src/recorder/         per-OS ffmpeg args, ffmpeg + WASAPI capture wrappers, dual
 native/               WASAPI loopback recorder (C#) + build output (Windows system audio)
 src/transcriber/      whisper.cpp wrapper + model manager
 src/pipeline/         session metadata, merge/label, transcribe orchestration
-src/output/           markdown + JSON sidecar writers
+src/output/           markdown transcript writer
 src/utils/            logger, fs, audio, ffmpeg helpers
 ```
 

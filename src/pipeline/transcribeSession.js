@@ -2,13 +2,12 @@ import ora from 'ora';
 import { transcribeFile } from '../transcriber/whisper.js';
 import { mergeTranscripts } from './merge.js';
 import { writeMarkdown } from '../output/markdown.js';
-import { writeJsonSidecar } from '../output/jsonSidecar.js';
 import { probeDuration } from '../utils/audio.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Transcribe both streams of a session, merge them, and write the .md + .json outputs.
- * @returns {{ mdFile, jsonFile, timeline }}
+ * Transcribe both streams of a session, merge them, and write the .md transcript.
+ * @returns {{ mdFile, timeline }}
  */
 export async function transcribeSession(cfg, session, { model, language, labels }) {
   const sysOffsetSec = (session.offsets?.systemMinusMicMs ?? 0) / 1000;
@@ -48,9 +47,7 @@ export async function transcribeSession(cfg, session, { model, language, labels 
 
   const ctx = { session, timeline, model, durationSec, speakers };
   const mdFile = writeMarkdown(cfg, ctx);
-  const jsonFile = writeJsonSidecar(cfg, ctx);
 
-  logger.success(`Transcript:   ${mdFile}`);
-  logger.success(`JSON sidecar: ${jsonFile}`);
-  return { mdFile, jsonFile, timeline };
+  logger.success(`Transcript: ${mdFile}`);
+  return { mdFile, timeline };
 }
