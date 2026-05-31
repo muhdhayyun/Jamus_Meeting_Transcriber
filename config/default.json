@@ -1,0 +1,24 @@
+{
+  "model": "large-v3",
+  "language": "auto",
+  "audio": {
+    "sampleRate": 16000,
+    "channels": 1,
+    "codec": "pcm_s16le"
+  },
+  "labels": {
+    "me": "Me",
+    "participants": "Participants"
+  },
+  "paths": {
+    "models": "models",
+    "recordings": "recordings",
+    "transcripts": "transcripts"
+  },
+  "recordMode": "dual",
+  "coalesceSpeakerTurns": true,
+  "devices": {
+    "mic": null,
+    "system": null
+  }
+}

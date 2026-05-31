@@ -1,0 +1,137 @@
+# Jamus — Local Meeting Transcriber · Architecture
+
+> A local, privacy-first meeting transcriber inspired by Jamie.
+> **Scope:** record audio → transcribe locally with Whisper → write a speaker-separated `.md` transcript.
+> **Out of scope:** AI summaries / insights / action items (handled separately by the user).
+
+**Confirmed build decisions:** primary OS **Windows** (`dshow`/WASAPI backend); default model **`large-v3`**.
+
+---
+
+## 1. Core idea — speaker separation "for free"
+
+Two physically separate audio sources mean the "me vs. others" split is exact, with no diarization model:
+
+```
+  Microphone     → mic.wav     → "Me"
+  System audio   → system.wav  → "Participants"
+```
+
+Each file is transcribed independently, every segment is tagged with its source label, then the two
+segment lists are merged and sorted by timestamp into one conversation.
+
+- **Tier 1 (built):** source-based separation → `Me` vs `Participants`.
+- **Tier 2 (future):** diarize *only* `system.wav` to split multiple remote speakers.
+
+---
+
+## 2. Technology
+
+| Concern | Choice |
+|---|---|
+| Runtime | Node.js ≥ 18 (ESM) |
+| Audio capture | FFmpeg via `child_process` — `dshow` (Win), `avfoundation` (mac), `pulse` (Linux) |
+| Transcription | `whisper.cpp` via `nodejs-whisper` (auto-builds, auto-downloads ggml models) |
+| CLI | `commander` + `@inquirer/prompts` + `ora` + `chalk` |
+| Time | `dayjs` |
+| Config | `config/default.json` merged with `~/.jamus/config.json` |
+
+---
+
+## 3. Structure (as built)
+
+```
+bin/jamus.js                CLI entrypoint (error wrapper)
+config/default.json         defaults: model, labels, audio, paths
+src/
+  cli.js                    commander wiring: devices/record/transcribe/run/models
+  config.js                 load + deep-merge defaults & user config; resolve paths
+  devices/
+    enumerate.js            list audio inputs per-OS, classify mic/loopback
+    loopback.js             loopback picker + per-OS setup help
+  recorder/
+    platform.js             per-OS ffmpeg input args
+    ffmpegProcess.js        spawn ffmpeg, graceful "q" stop, finalize WAV
+    recorder.js             dual-capture orchestrator + start-skew offset
+  transcriber/
+    modelManager.js         known models, validation, download status
+    whisper.js              run whisper.cpp on a wav → [{start,end,text}] (JSON→SRT fallback)
+  pipeline/
+    session.js              session id/dir/metadata (session.json)
+    merge.js                interleave + label + coalesce turns
+    transcribeSession.js    transcribe both streams → merge → write outputs
+  output/
+    markdown.js             render timeline → .md
+    jsonSidecar.js          structured .json for the user's AI step
+  utils/
+    logger.js  fsx.js  audio.js  ffmpeg.js
+models/        downloaded ggml models (gitignored, managed by nodejs-whisper)
+recordings/    per-session mic.wav + system.wav + session.json (gitignored)
+transcripts/   <date>-<slug>.md and .json
+```
+
+---
+
+## 4. Capture (per-OS) — `recorder/platform.js`
+
+Two ffmpeg processes write 16 kHz mono `pcm_s16le` WAV (Whisper's native format).
+
+- **Windows (primary):** `-f dshow -i audio="<name>"`; loopback via Stereo Mix or VB-CABLE.
+- **macOS:** `-f avfoundation -i ":<index>"`; loopback via BlackHole + Multi-Output Device.
+- **Linux:** `-f pulse -i <source>`; loopback via the sink `.monitor` source.
+
+**Graceful stop:** write `q` to ffmpeg stdin so the WAV header is finalized; SIGKILL only as a timeout fallback.
+
+**Alignment:** record each process's wall-clock start; `offset = systemStart − micStart` is applied to
+system timestamps before merge. (Optional future "stereo aggregate" mode = zero drift.)
+
+---
+
+## 5. Transcription — `transcriber/whisper.js`
+
+1. `nodewhisper(wav, { modelName, autoDownloadModelName, withCuda, whisperOptions:{ outputInJson, outputInSrt } })`.
+2. Parse the generated JSON (offsets in ms) → `[{start,end,text}]`; fall back to SRT parsing.
+3. Strip `[BLANK_AUDIO]`-style tokens, clean whitespace, delete intermediate artifacts.
+
+Default model `large-v3` (configurable). `--cuda` / `JAMUS_CUDA` selects the GPU build.
+
+---
+
+## 6. Merge & output
+
+`pipeline/merge.js`: tag mic→`Me`, system→`Participants` (+offset), sort by start, optionally coalesce
+consecutive same-speaker turns. `output/markdown.js` + `output/jsonSidecar.js` write the two files.
+
+Markdown: `**[HH:MM:SS] Speaker:** text`. JSON: `{ title, date, durationSec, model, speakers, segments[] }`.
+
+---
+
+## 7. CLI
+
+```
+jamus devices                              list inputs, detect loopback, print setup help
+jamus record   [--title --mic --system --mode]      record → session
+jamus transcribe <session> [--model --language --me --others --cuda]
+jamus run      [--title --mic --system --model --me --others --language --cuda]   record→transcribe
+jamus models   [--list | --download <name>]
+```
+
+First run prompts for mic + loopback and saves them to `~/.jamus/config.json`.
+
+---
+
+## 8. Risks & mitigations
+
+| Risk | Mitigation |
+|---|---|
+| No loopback configured | `jamus devices` detects & guides; record fails fast with instructions |
+| Mic echoes meeting audio → double text | Recommend headphones |
+| Two-process clock drift | Shared start timestamp + offset |
+| Hard-killed ffmpeg → corrupt WAV | Graceful `q` stop, SIGKILL only on timeout |
+| `large-v3` slow on CPU | `--cuda`, or `--model small.en` for drafts |
+
+---
+
+## 9. Future extensions
+Tier-2 diarization on `system.wav`; live/streaming captions; echo suppression; Electron/Tauri GUI;
+speaker enrollment for recurring participants.

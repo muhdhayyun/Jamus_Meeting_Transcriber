@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Downloaded Whisper ggml models (large — never commit)
+models/
+*.bin
+
+# Raw recordings (audio is large and private)
+recordings/
+
+# Generated transcripts (private meeting content) — keep the folder, ignore contents
+transcripts/*
+!transcripts/.gitkeep
+
+# Local user config
+.jamus/
+*.local.json
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
