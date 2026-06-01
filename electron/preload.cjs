@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('jamus', {
 
   listMeetings: () => ipcRenderer.invoke('meetings:list'),
   getMeeting: (id) => ipcRenderer.invoke('meeting:get', id),
+  renameMeeting: (id, title) => ipcRenderer.invoke('meeting:rename', { id, title }),
   openTranscripts: () => ipcRenderer.invoke('open:transcripts'),
 
   startRecording: (opts) => ipcRenderer.invoke('record:start', opts),

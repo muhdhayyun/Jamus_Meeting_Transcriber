@@ -3,6 +3,16 @@ const $ = (sel) => document.querySelector(sel);
 const view = $('#view');
 const statusBar = $('#statusBar');
 
+// Apply the saved theme immediately to avoid a flash.
+document.documentElement.dataset.theme = localStorage.getItem('jamus-theme') || 'light';
+function applyTheme(t) {
+  const theme = t === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem('jamus-theme', theme);
+  const btn = $('#themeBtn');
+  if (btn) btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+}
+
 let state = {
   meetings: [],
   activeId: null,
@@ -218,7 +228,10 @@ function renderDetail(meeting, transcript, insights, labels, tab) {
   const hasInsights = !!insights.trim();
   view.innerHTML = `
     <div class="detail-head">
-      <h1>${esc(meeting.title)}</h1>
+      <div class="title-row">
+        <h1>${esc(meeting.title)}</h1>
+        <button class="icon-btn" id="renameBtn" title="Rename meeting">✎</button>
+      </div>
       <div class="detail-meta">
         <span>📅 ${esc(meeting.date)}</span>
         <span>⏱ ${fmtDur(meeting.durationSec)}</span>
@@ -234,7 +247,31 @@ function renderDetail(meeting, transcript, insights, labels, tab) {
     view.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === t));
     paintTab(t.dataset.tab, meeting, transcript, insights, labels);
   }));
+  $('#renameBtn')?.addEventListener('click', () => startRename(meeting));
   paintTab(tab, meeting, transcript, insights, labels);
+}
+
+function startRename(meeting) {
+  const head = document.querySelector('.detail-head');
+  head.innerHTML = `<div class="rename-edit">
+    <input id="renameInput" type="text" value="${esc(meeting.title)}" />
+    <div class="actions"><button class="btn primary" id="renameSave">Save</button><button class="btn" id="renameCancel">Cancel</button></div>
+  </div>`;
+  const input = $('#renameInput');
+  input.focus(); input.select();
+  const save = async () => {
+    const t = input.value.trim();
+    if (!t) return;
+    try { await J.renameMeeting(meeting.id, t); } catch (e) { return alert(e.message); }
+    await refreshMeetings();
+    openMeeting(meeting.id);
+  };
+  $('#renameSave').addEventListener('click', save);
+  $('#renameCancel').addEventListener('click', () => openMeeting(meeting.id));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') save();
+    if (e.key === 'Escape') openMeeting(meeting.id);
+  });
 }
 
 function paintTab(tab, meeting, transcript, insights, labels) {
@@ -346,6 +383,8 @@ async function saveSettings() {
 $('#recordBtn').addEventListener('click', () => (state.recording ? null : openRecordPanel()));
 $('#refreshBtn').addEventListener('click', refreshMeetings);
 $('#settingsBtn').addEventListener('click', openSettings);
+$('#themeBtn').addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+applyTheme(document.documentElement.dataset.theme); // sync the toggle icon
 $('#settingsClose').addEventListener('click', () => $('#settingsModal').classList.add('hidden'));
 $('#settingsSave').addEventListener('click', saveSettings);
 

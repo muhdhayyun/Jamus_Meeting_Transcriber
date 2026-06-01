@@ -47,6 +47,7 @@ async function loadCore() {
     listMeetings: meetings.listMeetings,
     readTranscript: meetings.readTranscript,
     readInsights: meetings.readInsights,
+    renameMeeting: meetings.renameMeeting,
     recordingsSize: storage.recordingsSize,
   };
 }
@@ -128,6 +129,11 @@ ipcMain.handle('meeting:get', async (_e, id) => {
 
 ipcMain.handle('open:transcripts', async () => {
   await shell.openPath(core.loadConfig().resolved.transcripts);
+});
+
+ipcMain.handle('meeting:rename', async (_e, { id, title }) => {
+  core.renameMeeting(core.loadConfig(), id, title);
+  return true;
 });
 
 // ---- recording ---------------------------------------------------------

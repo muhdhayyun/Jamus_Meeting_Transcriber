@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-06-01
+
+### Added
+- **Dark mode** toggle (🌙/☀️) in the sidebar; preference persists across launches.
+- **Rename meeting** (✎ next to the title) — updates the title and the transcript/insights
+  headings; file ids stay stable.
+
 ## [0.2.0] - 2026-06-01
 
 Adds a desktop app, cloud insights, and storage management on top of the core engine.

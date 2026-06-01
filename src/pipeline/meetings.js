@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { readJsonIfExists } from '../utils/fsx.js';
+import { readJsonIfExists, writeJson } from '../utils/fsx.js';
 
 /**
  * List all meetings, newest first, by scanning the recordings directory for
@@ -66,4 +66,38 @@ export function readInsights(meeting) {
   } catch {
     return '';
   }
+}
+
+/** Replace the first "# ..." heading line of a markdown file (if it exists). */
+function rewriteHeading(file, heading) {
+  try {
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+    const idx = lines.findIndex((l) => l.startsWith('# '));
+    if (idx >= 0) {
+      lines[idx] = heading;
+      fs.writeFileSync(file, lines.join('\n'), 'utf8');
+    }
+  } catch {
+    /* file may not exist yet */
+  }
+}
+
+/**
+ * Rename a meeting's title. Updates session.json and the transcript/insights
+ * headings. Filenames stay keyed to the (stable) session id.
+ */
+export function renameMeeting(cfg, id, newTitle) {
+  const title = String(newTitle || '').trim();
+  if (!title) throw new Error('Title cannot be empty.');
+
+  const metaPath = path.join(cfg.resolved.recordings, id, 'session.json');
+  const meta = readJsonIfExists(metaPath);
+  if (!meta) throw new Error('Meeting not found.');
+  meta.title = title;
+  writeJson(metaPath, meta);
+
+  const txDir = cfg.resolved.transcripts;
+  rewriteHeading(path.join(txDir, `${id}.md`), `# ${title}`);
+  rewriteHeading(path.join(txDir, `${id}.insights.md`), `# Insights — ${title}`);
+  return true;
 }

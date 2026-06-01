@@ -14,6 +14,24 @@
   font-synthesis: none;
 }
 
+:root[data-theme="dark"] {
+  --bg: #0f1116;
+  --sidebar: #15181f;
+  --card: #1b1f29;
+  --border: #2a3040;
+  --text: #e7e9f0;
+  --muted: #98a2b3;
+  --accent: #8b7bff;
+  --accent-soft: #221f3d;
+  --rec: #f05252;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="dark"] .setup-warn { background: #2a2113; border-color: #5b4711; color: #fcd9a0; }
+:root[data-theme="dark"] .field input, :root[data-theme="dark"] .field select { background: #11141b; }
+:root[data-theme="dark"] .badge.gray { background: #232733; }
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #app { height: 100%; }
@@ -67,11 +85,22 @@ body {
 .badge { font-size: 9px; padding: 1px 6px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 .badge.gray { background: #f0f0f4; color: var(--muted); }
 
+.sidebar-footer { margin-top: 10px; display: flex; gap: 8px; align-items: stretch; }
 .settings-btn {
-  margin-top: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 10px;
+  flex: 1; padding: 10px; border: 1px solid var(--border); border-radius: 10px;
   background: transparent; color: var(--text); cursor: pointer; font-size: 13px;
 }
 .settings-btn:hover { background: var(--bg); }
+.theme-btn {
+  width: 42px; border: 1px solid var(--border); border-radius: 10px; background: transparent;
+  cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;
+}
+.theme-btn:hover { background: var(--bg); }
+.rename-edit { display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+.rename-edit input { font-size: 22px; font-weight: 700; padding: 7px 10px; border: 1px solid var(--accent); border-radius: 9px; background: var(--card); color: var(--text); }
+.rename-edit .actions { display: flex; gap: 8px; }
+.title-row { display: flex; align-items: center; gap: 10px; }
+.title-row .icon-btn { font-size: 16px; }
 .icon-btn { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 15px; }
 .icon-btn:hover { color: var(--text); }
 
