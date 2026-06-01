@@ -6,6 +6,7 @@ import { saveSession } from '../pipeline/session.js';
 import { logger } from '../utils/logger.js';
 import { probeDuration, ensure16kMono } from '../utils/audio.js';
 import { fileSize } from '../utils/fsx.js';
+import { enforceStorageCap } from '../utils/storage.js';
 
 const isWin = os.platform() === 'win32';
 
@@ -60,6 +61,10 @@ export async function recordSession(cfg, session, { waitForStop }) {
   };
 
   saveSession(session);
+
+  // Keep the recordings directory under the configured size cap (delete oldest).
+  enforceStorageCap(cfg.resolved.recordings, cfg.storage?.maxRecordingsGB ?? 20);
+
   return session;
 }
 

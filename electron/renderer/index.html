@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Jamus</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">🎙️</div>
+        <div class="brand-text">
+          <div class="brand-name">Jamus</div>
+          <div class="brand-sub">Local meeting transcriber</div>
+        </div>
+      </div>
+
+      <button id="recordBtn" class="record-btn">
+        <span class="dot"></span> New recording
+      </button>
+
+      <div class="meetings-head">
+        <span>Meetings</span>
+        <button id="refreshBtn" class="icon-btn" title="Refresh">⟳</button>
+      </div>
+      <div id="meetingList" class="meeting-list"></div>
+
+      <button id="settingsBtn" class="settings-btn">⚙ Settings</button>
+    </aside>
+
+    <!-- Main content -->
+    <main class="content">
+      <div id="statusBar" class="status-bar hidden"></div>
+      <div id="view" class="view"></div>
+    </main>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Settings</h2>
+        <button id="settingsClose" class="icon-btn">✕</button>
+      </div>
+      <div id="settingsBody" class="modal-body"></div>
+      <div class="modal-foot">
+        <span id="settingsSaved" class="saved-msg"></span>
+        <button id="settingsSave" class="primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

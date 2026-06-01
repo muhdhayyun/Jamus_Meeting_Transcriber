@@ -6,10 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
-### Planned
-- Desktop UI (Jamie-style) so the app runs as a window, not just the CLI.
-- AI insights via the Groq API (summary, action items, decisions) → `*.insights.md`.
-- Recording storage cap with automatic cleanup of oldest recordings.
+## [0.2.0] - 2026-06-01
+
+Adds a desktop app, cloud insights, and storage management on top of the core engine.
+
+### Added
+- **Desktop UI (Electron, Jamie-style)**: sidebar meeting list, one-click record
+  with live timer, transcript + insights tabs, and a settings panel. Run with `npm run app`.
+- **AI insights via Groq** (cloud): generates Summary / Action Items / Key Decisions /
+  Topics & Open Questions into `transcripts/<id>.insights.md`. Off by default; enable with
+  an API key in Settings (stored locally). CLI: `jamus insights <session>` or `--insights`.
+- **Recording storage cap** (default 20 GB) — oldest recordings auto-deleted past the cap.
+- `scripts/start-app.mjs` launcher that clears `ELECTRON_RUN_AS_NODE` (set by some
+  terminals/VS Code) so the GUI launches reliably.
+
+### Notes
+- Insights use a cloud API, so transcript text is sent to Groq's servers (not local).
 
 ## [0.1.0] - 2026-06-01
 

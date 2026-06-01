@@ -1,8 +1,9 @@
 {
   "name": "jamus",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local, privacy-first meeting transcriber. Records your mic + system audio separately and produces a speaker-separated Markdown transcript using local Whisper. No cloud, no API keys.",
   "type": "module",
+  "main": "electron/main.cjs",
   "bin": {
     "jamus": "bin/jamus.js"
   },
@@ -10,6 +11,7 @@
     "node": ">=18"
   },
   "scripts": {
+    "app": "node scripts/start-app.mjs",
     "start": "node bin/jamus.js",
     "devices": "node bin/jamus.js devices",
     "record": "node bin/jamus.js record",
@@ -37,5 +39,8 @@
     "dayjs": "^1.11.13",
     "nodejs-whisper": "^0.2.9",
     "ora": "^8.1.1"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
   }
 }

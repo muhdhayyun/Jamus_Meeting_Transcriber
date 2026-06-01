@@ -18,6 +18,15 @@
   "recordMode": "dual",
   "coalesceSpeakerTurns": true,
   "vad": true,
+  "storage": {
+    "maxRecordingsGB": 20
+  },
+  "groq": {
+    "enabled": false,
+    "apiKey": "",
+    "model": "llama-3.3-70b-versatile",
+    "sections": ["summary", "actionItems", "keyDecisions", "topicsQuestions"]
+  },
   "devices": {
     "mic": null,
     "system": null

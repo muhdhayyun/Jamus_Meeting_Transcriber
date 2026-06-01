@@ -66,7 +66,19 @@ commands as `node bin/jamus.js <command>` or `npm run <script>`.
 
 ---
 
-## Usage
+## Desktop app (recommended)
+
+```bash
+npm run app
+```
+
+Opens the Jamus window: pick your mic, click **New recording**, hit **Stop & transcribe**,
+and read the speaker-separated transcript. **Settings** lets you set the model, speaker labels,
+storage cap, and your **Groq API key** for AI insights (Summary / Action items / Key decisions /
+Topics & open questions). Insights are off until you add a key; note the transcript is then sent to
+Groq's cloud. The launcher auto-clears `ELECTRON_RUN_AS_NODE` so it works from any terminal.
+
+## CLI usage
 
 ### 1. Check your devices
 

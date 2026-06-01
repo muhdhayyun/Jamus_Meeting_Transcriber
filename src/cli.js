@@ -15,6 +15,7 @@ import { recordSession } from './recorder/recorder.js';
 import { wasapiBuilt, assertWasapiBuilt } from './recorder/wasapiCapture.js';
 import { transcribeSession } from './pipeline/transcribeSession.js';
 import { KNOWN_MODELS, validateModel, isModelDownloaded, ensureModel, isBuilt } from './transcriber/modelManager.js';
+import { writeInsightsForSession } from './insights/groq.js';
 
 export async function run(argv) {
   const program = new Command();
@@ -45,6 +46,7 @@ export async function run(argv) {
     .option('--language <lang>', 'language code (or "auto")')
     .option('--me <name>', 'label for your own voice')
     .option('--others <name>', 'label for other participants')
+    .option('--insights', 'also generate AI insights via Groq after transcribing')
     .action((sessionRef, opts) => cmdTranscribe(sessionRef, opts));
 
   program
@@ -58,7 +60,14 @@ export async function run(argv) {
     .option('--language <lang>', 'language code (or "auto")')
     .option('--me <name>', 'label for your own voice')
     .option('--others <name>', 'label for other participants')
+    .option('--insights', 'also generate AI insights via Groq after transcribing')
     .action((opts) => cmdRun(opts));
+
+  program
+    .command('insights')
+    .argument('<session>', 'session id, directory, or session.json path')
+    .description('Generate AI insights (Groq) for an already-transcribed session')
+    .action((sessionRef) => cmdInsights(sessionRef));
 
   program
     .command('models')
@@ -130,6 +139,7 @@ async function cmdTranscribe(sessionRef, opts) {
     language: opts.language || cfg.language,
     labels,
   });
+  await maybeInsights(cfg, session, opts);
 }
 
 // ---------------------------------------------------------------- run
@@ -150,6 +160,24 @@ async function cmdRun(opts) {
     language: opts.language || cfg.language,
     labels,
   });
+  await maybeInsights(cfg, session, opts);
+}
+
+// ---------------------------------------------------------------- insights
+async function cmdInsights(sessionRef) {
+  const cfg = loadConfig();
+  const session = loadSession(cfg, sessionRef);
+  await writeInsightsForSession(cfg, session);
+}
+
+/** Generate insights if requested (--insights) or enabled in config, swallowing errors softly. */
+async function maybeInsights(cfg, session, opts) {
+  if (!opts.insights && !cfg.groq?.enabled) return;
+  try {
+    await writeInsightsForSession(cfg, session);
+  } catch (err) {
+    logger.warn(`Insights skipped: ${err.message}`);
+  }
 }
 
 // ---------------------------------------------------------------- models
