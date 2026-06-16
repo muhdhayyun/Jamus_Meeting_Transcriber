@@ -1,6 +1,6 @@
 {
   "name": "jamus",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local, privacy-first meeting transcriber. Records your mic + system audio separately and produces a speaker-separated Markdown transcript using local Whisper. No cloud, no API keys.",
   "type": "module",
   "main": "electron/main.cjs",

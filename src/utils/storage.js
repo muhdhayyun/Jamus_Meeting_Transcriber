@@ -28,8 +28,9 @@ export function recordingsSize(recordingsDir) {
 }
 
 /**
- * Enforce a size cap on the recordings directory by deleting the OLDEST session
- * folders until the total is under the cap.
+ * Enforce a size cap on the recordings directory by deleting the .wav files of the
+ * OLDEST sessions until the total is under the cap. Transcripts and session.json are
+ * kept, so capped-out meetings still appear in the app (just without re-transcribable audio).
  * @returns {{ before:number, after:number, deleted:string[] }}
  */
 export function enforceStorageCap(recordingsDir, maxGB) {
@@ -45,7 +46,7 @@ export function enforceStorageCap(recordingsDir, maxGB) {
       .filter((e) => e.isDirectory())
       .map((e) => {
         const full = path.join(recordingsDir, e.name);
-        return { name: e.name, full, mtime: fs.statSync(full).mtimeMs, size: dirSize(full) };
+        return { name: e.name, full, mtime: fs.statSync(full).mtimeMs };
       })
       .sort((a, b) => a.mtime - b.mtime); // oldest first
   } catch {
@@ -55,16 +56,18 @@ export function enforceStorageCap(recordingsDir, maxGB) {
   let total = before;
   for (const s of sessions) {
     if (total <= maxBytes) break;
+    let removedHere = 0;
     try {
-      fs.rmSync(s.full, { recursive: true, force: true });
-      total -= s.size;
-      deleted.push(s.name);
-    } catch {
-      /* ignore */
-    }
+      for (const f of fs.readdirSync(s.full)) {
+        if (!f.toLowerCase().endsWith('.wav')) continue;
+        const full = path.join(s.full, f);
+        try { const sz = fs.statSync(full).size; fs.rmSync(full, { force: true }); total -= sz; removedHere += sz; } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+    if (removedHere) deleted.push(s.name);
   }
   if (deleted.length) {
-    logger.dim(`Storage cap (${maxGB} GB) exceeded — removed ${deleted.length} oldest recording(s).`);
+    logger.dim(`Storage cap (${maxGB} GB) exceeded — cleared audio from ${deleted.length} oldest recording(s).`);
   }
   return { before, after: total, deleted };
 }

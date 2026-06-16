@@ -231,11 +231,13 @@ function renderDetail(meeting, transcript, insights, labels, tab) {
       <div class="title-row">
         <h1>${esc(meeting.title)}</h1>
         <button class="icon-btn" id="renameBtn" title="Rename meeting">✎</button>
+        ${meeting.hasAudio ? '<button class="icon-btn" id="delAudioBtn" title="Delete audio (keeps transcript)">🗑</button>' : ''}
       </div>
       <div class="detail-meta">
         <span>📅 ${esc(meeting.date)}</span>
         <span>⏱ ${fmtDur(meeting.durationSec)}</span>
         <span>${meeting.hasTranscript ? '📝 transcribed' : '⚠ not transcribed'}</span>
+        <span>${meeting.hasAudio ? '🎵 audio kept' : '🎵 audio deleted'}</span>
       </div>
     </div>
     <div class="tabs">
@@ -248,6 +250,14 @@ function renderDetail(meeting, transcript, insights, labels, tab) {
     paintTab(t.dataset.tab, meeting, transcript, insights, labels);
   }));
   $('#renameBtn')?.addEventListener('click', () => startRename(meeting));
+  $('#delAudioBtn')?.addEventListener('click', async () => {
+    if (!confirm(`Delete the audio recording for “${meeting.title}”?\n\nThis frees disk space and keeps the transcript, but you won't be able to re-transcribe this meeting.`)) return;
+    setStatus('Deleting audio…');
+    await J.deleteAudio(meeting.id).catch((e) => alert(e.message));
+    setStatus(null);
+    await refreshMeetings();
+    openMeeting(meeting.id);
+  });
   paintTab(tab, meeting, transcript, insights, labels);
 }
 
@@ -335,7 +345,9 @@ async function openSettings() {
       <label>Recording size cap (GB)</label>
       <input type="number" id="setCap" min="1" value="${esc(s.storage?.maxRecordingsGB ?? 20)}" />
       <div class="storage-bar"><div class="storage-fill" style="width:${st.storage ? Math.min(100, (st.storage.usedGB / (st.storage.capGB || 20)) * 100) : 0}%"></div></div>
-      <div class="hint">${st.storage ? `Using ${st.storage.usedGB} GB of ${st.storage.capGB} GB. Oldest recordings are deleted past the cap.` : ''}</div>
+      <div class="hint">${st.storage ? `Using ${st.storage.usedGB} GB of ${st.storage.capGB} GB. Oldest audio is cleared past the cap (transcripts kept).` : ''}</div>
+      <button class="btn" id="delAllAudio" type="button" style="margin-top:10px;">🗑 Delete all recording audio</button>
+      <div class="hint">Frees the most space. Transcripts &amp; insights are kept; meetings stay listed.</div>
     </div>
 
     <div class="section-title">AI Insights (Groq)</div>
@@ -355,6 +367,15 @@ async function openSettings() {
         ${sec('summary', 'Summary')} ${sec('actionItems', 'Action items')} ${sec('keyDecisions', 'Key decisions')} ${sec('topicsQuestions', 'Topics & open questions')}
       </div>
     </div>`;
+  $('#delAllAudio')?.addEventListener('click', async () => {
+    if (!confirm("Delete the audio (.wav) for ALL meetings?\n\nFrees the most space. Transcripts and insights are kept and meetings stay listed, but you won't be able to re-transcribe any of them.")) return;
+    const r = await J.deleteAllAudio().catch((e) => { alert(e.message); return null; });
+    if (!r) return;
+    alert(`Deleted audio from ${r.count} file(s) — freed ${(r.freed / 1024 / 1024 / 1024).toFixed(2)} GB.`);
+    state.status = await J.status().catch(() => state.status);
+    await refreshMeetings();
+    openSettings(); // re-render with updated usage
+  });
   $('#settingsSaved').textContent = '';
   $('#settingsModal').classList.remove('hidden');
 }

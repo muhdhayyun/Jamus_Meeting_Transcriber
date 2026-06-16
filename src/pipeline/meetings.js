@@ -68,6 +68,38 @@ export function readInsights(meeting) {
   }
 }
 
+/** Delete a single meeting's .wav files (keeps session.json + transcript). */
+export function deleteMeetingAudio(cfg, id) {
+  const dir = path.join(cfg.resolved.recordings, id);
+  let freed = 0;
+  let count = 0;
+  let entries = [];
+  try { entries = fs.readdirSync(dir); } catch { return { freed, count }; }
+  for (const f of entries) {
+    if (f.toLowerCase().endsWith('.wav')) {
+      const full = path.join(dir, f);
+      try { freed += fs.statSync(full).size; fs.rmSync(full, { force: true }); count++; } catch { /* ignore */ }
+    }
+  }
+  return { freed, count };
+}
+
+/** Delete the .wav files of ALL meetings (keeps transcripts + meeting list). */
+export function deleteAllAudio(cfg) {
+  let freed = 0;
+  let count = 0;
+  let dirs = [];
+  try {
+    dirs = fs.readdirSync(cfg.resolved.recordings, { withFileTypes: true }).filter((e) => e.isDirectory());
+  } catch { return { freed, count }; }
+  for (const d of dirs) {
+    const r = deleteMeetingAudio(cfg, d.name);
+    freed += r.freed;
+    count += r.count;
+  }
+  return { freed, count };
+}
+
 /** Replace the first "# ..." heading line of a markdown file (if it exists). */
 function rewriteHeading(file, heading) {
   try {

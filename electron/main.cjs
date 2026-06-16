@@ -48,6 +48,8 @@ async function loadCore() {
     readTranscript: meetings.readTranscript,
     readInsights: meetings.readInsights,
     renameMeeting: meetings.renameMeeting,
+    deleteMeetingAudio: meetings.deleteMeetingAudio,
+    deleteAllAudio: meetings.deleteAllAudio,
     recordingsSize: storage.recordingsSize,
   };
 }
@@ -135,6 +137,9 @@ ipcMain.handle('meeting:rename', async (_e, { id, title }) => {
   core.renameMeeting(core.loadConfig(), id, title);
   return true;
 });
+
+ipcMain.handle('audio:delete', async (_e, id) => core.deleteMeetingAudio(core.loadConfig(), id));
+ipcMain.handle('audio:deleteAll', async () => core.deleteAllAudio(core.loadConfig()));
 
 // ---- recording ---------------------------------------------------------
 ipcMain.handle('record:start', async (_e, { title, mic }) => {

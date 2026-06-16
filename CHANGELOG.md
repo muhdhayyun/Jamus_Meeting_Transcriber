@@ -6,7 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-06-01
+## [0.4.0] - 2026-06-01
+
+### Added
+- **Delete audio** per meeting (🗑 next to the title) and **Delete all recording audio**
+  (Settings → Storage) to free space. Transcripts, insights, and the meeting list are kept —
+  only the `.wav` files are removed (you just can't re-transcribe afterward).
+
+### Changed
+- The storage cap now clears only the **audio** of the oldest recordings (keeping
+  `session.json` + transcripts) instead of deleting whole meeting folders, so capped-out
+  meetings still appear in the app.
 
 ### Added
 - **Dark mode** toggle (🌙/☀️) in the sidebar; preference persists across launches.
