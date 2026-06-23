@@ -37,6 +37,7 @@ export function loadConfig() {
     models: path.resolve(PROJECT_ROOT, cfg.paths.models),
     recordings: path.resolve(PROJECT_ROOT, cfg.paths.recordings),
     transcripts: path.resolve(PROJECT_ROOT, cfg.paths.transcripts),
+    dropin: path.resolve(PROJECT_ROOT, cfg.paths.dropin || 'Drop-In Recordings'),
   };
   return cfg;
 }

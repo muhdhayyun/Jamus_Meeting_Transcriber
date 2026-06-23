@@ -210,6 +210,48 @@ async function cancelRecording() {
   renderEmpty();
 }
 
+async function openImport() {
+  const picked = await J.importPick();
+  if (!picked || !picked.length) return;
+  const wantInsights = !!(state.settings?.groq?.enabled && state.settings?.groq?.apiKey);
+  const stripExt = (n) => n.replace(/\.[^.]+$/, '');
+
+  if (picked.length > 1) {
+    if (!confirm(`Transcribe ${picked.length} files? Each becomes its own transcript, titled by filename.`)) return;
+    setStatus('Importing…');
+    let res;
+    try { res = await J.importRun({ files: picked.map((f) => ({ path: f.path, title: stripExt(f.name) })), insights: wantInsights }); }
+    catch (e) { setStatus(null); alert('Import failed:\n\n' + e.message); return renderEmpty(); }
+    setStatus(null);
+    await refreshMeetings();
+    if (res?.ids?.length) openMeeting(res.ids[res.ids.length - 1]);
+    return;
+  }
+
+  const f = picked[0];
+  const defTitle = stripExt(f.name);
+  state.activeId = null;
+  renderMeetingList();
+  view.innerHTML = `
+    <div style="max-width:520px;">
+      <h1 style="font-size:22px;font-weight:700;margin-bottom:4px;">Import recording</h1>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:20px;">${esc(f.name)} → transcribed as a single-speaker transcript.</p>
+      <div class="field"><label>Title</label><input type="text" id="impTitle" value="${esc(defTitle)}" /></div>
+      <button class="btn primary" id="impGo">Transcribe</button>
+    </div>`;
+  $('#impGo').addEventListener('click', async () => {
+    $('#impGo').disabled = true;
+    const title = $('#impTitle').value.trim() || defTitle;
+    setStatus('Importing & transcribing…');
+    let res;
+    try { res = await J.importRun({ files: [{ path: f.path, title }], insights: wantInsights }); }
+    catch (e) { setStatus(null); alert('Import failed:\n\n' + e.message); return renderEmpty(); }
+    setStatus(null);
+    await refreshMeetings();
+    if (res?.ids?.[0]) openMeeting(res.ids[0]);
+  });
+}
+
 async function openMeeting(id) {
   state.activeId = id;
   renderMeetingList();
@@ -402,6 +444,7 @@ async function saveSettings() {
 
 // ---------- wire up ----------
 $('#recordBtn').addEventListener('click', () => (state.recording ? null : openRecordPanel()));
+$('#importBtn').addEventListener('click', () => (state.recording ? null : openImport()));
 $('#refreshBtn').addEventListener('click', refreshMeetings);
 $('#settingsBtn').addEventListener('click', openSettings);
 $('#themeBtn').addEventListener('click', () => applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));

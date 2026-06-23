@@ -78,6 +78,15 @@ storage cap, and your **Groq API key** for AI insights (Summary / Action items /
 Topics & open questions). Insights are off until you add a key; note the transcript is then sent to
 Groq's cloud. The launcher auto-clears `ELECTRON_RUN_AS_NODE` so it works from any terminal.
 
+## Transcribe an existing recording (phone memo, mp3, m4a…)
+
+Drop the file into the **`Drop-In Recordings/`** folder (or anywhere), then:
+- **App:** `npm run app` → **⤓ Import audio file** (opens that folder by default) → pick one
+  or several → Transcribe. Each becomes its own single-speaker transcript.
+- **CLI:** `node bin/jamus.js transcribe-file "Drop-In Recordings/my-memo.m4a" --title "My memo"`
+
+The original file is left untouched; any format FFmpeg can read is supported.
+
 ## CLI usage
 
 ### 1. Check your devices

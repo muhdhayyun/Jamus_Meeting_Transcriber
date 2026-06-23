@@ -16,6 +16,7 @@ import { wasapiBuilt, assertWasapiBuilt } from './recorder/wasapiCapture.js';
 import { transcribeSession } from './pipeline/transcribeSession.js';
 import { KNOWN_MODELS, validateModel, isModelDownloaded, ensureModel, isBuilt } from './transcriber/modelManager.js';
 import { writeInsightsForSession } from './insights/groq.js';
+import { importAudioFile } from './pipeline/importAudio.js';
 
 export async function run(argv) {
   const program = new Command();
@@ -62,6 +63,17 @@ export async function run(argv) {
     .option('--others <name>', 'label for other participants')
     .option('--insights', 'also generate AI insights via Groq after transcribing')
     .action((opts) => cmdRun(opts));
+
+  program
+    .command('transcribe-file')
+    .argument('<path>', 'path to an audio file (mp3, m4a, wav, etc.)')
+    .description('Transcribe an existing audio/voice recording into Markdown')
+    .option('-t, --title <title>', 'title for the transcript')
+    .option('-m, --model <model>', 'Whisper model')
+    .option('--language <lang>', 'language code (or "auto")')
+    .option('--me <name>', 'speaker label')
+    .option('--insights', 'also generate AI insights via Groq')
+    .action((filePath, opts) => cmdTranscribeFile(filePath, opts));
 
   program
     .command('insights')
@@ -156,6 +168,23 @@ async function cmdRun(opts) {
     logger.dim(`Model "${model}" is not downloaded yet — it will be fetched now (first run only).`);
   }
   await transcribeSession(cfg, session, {
+    model,
+    language: opts.language || cfg.language,
+    labels,
+  });
+  await maybeInsights(cfg, session, opts);
+}
+
+// ---------------------------------------------------------------- transcribe-file
+async function cmdTranscribeFile(filePath, opts) {
+  const cfg = loadConfig();
+  const labels = {
+    me: opts.me || cfg.labels.me,
+    participants: cfg.labels.participants,
+  };
+  const model = validateModel(opts.model || cfg.model);
+  const session = await importAudioFile(cfg, filePath, {
+    title: opts.title,
     model,
     language: opts.language || cfg.language,
     labels,

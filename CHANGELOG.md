@@ -6,7 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
-## [0.4.0] - 2026-06-01
+## [0.5.0] - 2026-06-01
+
+### Added
+- **Import existing audio** (phone memos, mp3/m4a/wav/…): converts any format and
+  transcribes it as a single-speaker transcript that appears in the meeting list.
+  - Desktop: "⤓ Import audio file" button (file picker, multi-select supported).
+  - CLI: `jamus transcribe-file <path> [--title --model --me --insights]`.
+- **Drop-In Recordings/** folder — drop files here; the app's import picker opens it
+  by default. Contents are gitignored.
 
 ### Added
 - **Delete audio** per meeting (🗑 next to the title) and **Delete all recording audio**

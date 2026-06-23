@@ -1,6 +1,6 @@
 // Electron main process (CommonJS). The core engine is ESM, so we load it via
 // dynamic import() — this avoids Electron's ESM-main CJS-interop issues.
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
@@ -13,7 +13,7 @@ let mainWindow = null;
 let recordingState = null; // { cfg, session, stopResolver, donePromise }
 
 async function loadCore() {
-  const [config, ffmpeg, enumerate, loopback, session, recorder, wasapi, transcribe, modelManager, groq, meetings, storage] =
+  const [config, ffmpeg, enumerate, loopback, session, recorder, wasapi, transcribe, modelManager, groq, meetings, storage, importAudio] =
     await Promise.all([
       imp('../src/config.js'),
       imp('../src/utils/ffmpeg.js'),
@@ -27,6 +27,7 @@ async function loadCore() {
       imp('../src/insights/groq.js'),
       imp('../src/pipeline/meetings.js'),
       imp('../src/utils/storage.js'),
+      imp('../src/pipeline/importAudio.js'),
     ]);
   core = {
     loadConfig: config.loadConfig,
@@ -51,6 +52,7 @@ async function loadCore() {
     deleteMeetingAudio: meetings.deleteMeetingAudio,
     deleteAllAudio: meetings.deleteAllAudio,
     recordingsSize: storage.recordingsSize,
+    importAudioFile: importAudio.importAudioFile,
   };
 }
 
@@ -140,6 +142,42 @@ ipcMain.handle('meeting:rename', async (_e, { id, title }) => {
 
 ipcMain.handle('audio:delete', async (_e, id) => core.deleteMeetingAudio(core.loadConfig(), id));
 ipcMain.handle('audio:deleteAll', async () => core.deleteAllAudio(core.loadConfig()));
+
+// ---- import existing audio ---------------------------------------------
+ipcMain.handle('import:pick', async () => {
+  const cfg = core.loadConfig();
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose audio file(s) to transcribe',
+    defaultPath: cfg.resolved.dropin,
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: 'Audio', extensions: ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'oga', 'opus', 'flac', 'wma', 'mp4', 'webm', '3gp', 'amr', 'aiff', 'caf'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  });
+  if (r.canceled || !r.filePaths.length) return null;
+  return r.filePaths.map((p) => ({ path: p, name: path.basename(p) }));
+});
+
+ipcMain.handle('import:run', async (_e, { files, insights }) => {
+  const cfg = core.loadConfig();
+  const ids = [];
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    status(`Importing ${i + 1}/${files.length}: ${path.basename(f.path)}…`);
+    const session = await core.importAudioFile(cfg, f.path, { title: f.title, model: cfg.model, language: cfg.language, labels: cfg.labels });
+    if (insights ?? cfg.groq?.enabled) {
+      try { status('Generating insights…'); await core.writeInsightsForSession(cfg, session); } catch (err) { status(`Insights skipped: ${err.message}`); }
+    }
+    ids.push(session.id);
+  }
+  status('Done.');
+  return { ids };
+});
+
+ipcMain.handle('open:dropin', async () => {
+  await shell.openPath(core.loadConfig().resolved.dropin);
+});
 
 // ---- recording ---------------------------------------------------------
 ipcMain.handle('record:start', async (_e, { title, mic }) => {

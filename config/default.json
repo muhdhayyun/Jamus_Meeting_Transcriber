@@ -13,7 +13,8 @@
   "paths": {
     "models": "models",
     "recordings": "recordings",
-    "transcripts": "transcripts"
+    "transcripts": "transcripts",
+    "dropin": "Drop-In Recordings"
   },
   "recordMode": "dual",
   "coalesceSpeakerTurns": true,

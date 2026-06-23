@@ -25,6 +25,17 @@ export function probeDuration(file) {
   return Number.isFinite(dur) ? dur : 0;
 }
 
+/** Convert any audio file to 16 kHz mono pcm_s16le WAV at `dest`. Returns true on success. */
+export function convertAudioTo16kMono(src, dest) {
+  if (!fileExists(src)) return false;
+  const res = spawnSync(
+    ffmpegBin(),
+    ['-hide_banner', '-loglevel', 'error', '-i', src, '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', dest],
+    { encoding: 'utf8' }
+  );
+  return res.status === 0 && fileExists(dest);
+}
+
 /** Convert a WAV in place to 16 kHz mono pcm_s16le (Whisper's required format). */
 export function ensure16kMono(file) {
   if (!fileExists(file)) return;

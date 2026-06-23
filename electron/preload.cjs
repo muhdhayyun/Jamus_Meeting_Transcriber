@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('jamus', {
 
   generateInsights: (id) => ipcRenderer.invoke('insights:generate', id),
 
+  importPick: () => ipcRenderer.invoke('import:pick'),
+  importRun: (opts) => ipcRenderer.invoke('import:run', opts),
+  openDropin: () => ipcRenderer.invoke('open:dropin'),
+
   onStatus: (cb) => {
     const handler = (_e, msg) => cb(msg);
     ipcRenderer.on('status', handler);

@@ -8,6 +8,11 @@ models/
 # Raw recordings (audio is large and private)
 recordings/
 
+# Drop-In Recordings: keep the folder + readme, ignore the audio you drop in
+Drop-In Recordings/*
+!Drop-In Recordings/.gitkeep
+!Drop-In Recordings/README.txt
+
 # Generated transcripts (private meeting content) — keep the folder, ignore contents
 transcripts/*
 !transcripts/.gitkeep

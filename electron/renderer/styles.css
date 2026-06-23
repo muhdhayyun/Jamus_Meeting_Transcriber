@@ -68,6 +68,11 @@ body {
 .record-btn:hover { filter: brightness(1.07); }
 .record-btn .dot { width: 9px; height: 9px; border-radius: 50%; background: #fff; }
 .record-btn.recording { background: var(--rec); }
+.import-btn {
+  width: 100%; margin-top: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 10px;
+  background: transparent; color: var(--text); font-size: 13px; cursor: pointer;
+}
+.import-btn:hover { background: var(--bg); }
 
 .meetings-head {
   display: flex; align-items: center; justify-content: space-between;
