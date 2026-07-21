@@ -24,9 +24,24 @@ contextBridge.exposeInMainWorld('jamus', {
   importRun: (opts) => ipcRenderer.invoke('import:run', opts),
   openDropin: () => ipcRenderer.invoke('open:dropin'),
 
+  liveStatus: () => ipcRenderer.invoke('live:status'),
+  startLive: (opts) => ipcRenderer.invoke('live:start', opts),
+  stopLive: (opts) => ipcRenderer.invoke('live:stop', opts),
+  cancelLive: () => ipcRenderer.invoke('live:cancel'),
+
   onStatus: (cb) => {
     const handler = (_e, msg) => cb(msg);
     ipcRenderer.on('status', handler);
     return () => ipcRenderer.removeListener('status', handler);
+  },
+  onLiveTranscript: (cb) => {
+    const handler = (_e, timeline) => cb(timeline);
+    ipcRenderer.on('live:transcript', handler);
+    return () => ipcRenderer.removeListener('live:transcript', handler);
+  },
+  onLiveSummary: (cb) => {
+    const handler = (_e, text) => cb(text);
+    ipcRenderer.on('live:summary', handler);
+    return () => ipcRenderer.removeListener('live:summary', handler);
   },
 });

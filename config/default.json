@@ -28,6 +28,16 @@
     "model": "llama-3.3-70b-versatile",
     "sections": ["summary", "actionItems", "keyDecisions", "topicsQuestions"]
   },
+  "live": {
+    "enabled": true,
+    "segmentSeconds": 12,
+    "summaryProvider": "ollama",
+    "summaryIntervalSec": 45,
+    "ollama": {
+      "url": "http://127.0.0.1:11434",
+      "model": "llama3.1:8b"
+    }
+  },
   "devices": {
     "mic": null,
     "system": null

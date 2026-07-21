@@ -1,14 +1,21 @@
 // WASAPI loopback recorder for Jamus.
 //
 // Captures whatever is playing on the default audio RENDER endpoint (your speakers/AirPods)
-// and writes it to a mono 16-bit PCM WAV — no Stereo Mix / virtual cable required.
+// and writes it to mono 16-bit PCM WAV — no Stereo Mix / virtual cable required.
 //
-// Usage:   wasapi-loopback.exe <output.wav>
+// Usage:
+//   wasapi-loopback.exe <output.wav>                       single continuous file (normal recording)
+//   wasapi-loopback.exe --segments <outDir> <segSeconds>   rolling N-second WAV segments (live mode) —
+//                                                            each finalized segment is immediately valid,
+//                                                            and <outDir>/segments.jsonl gets one JSON line
+//                                                            per completed segment: {index,file,startMs,durationMs}
+//
 // Stops on: a line/EOF on stdin (the host writes to stdin to stop) or Ctrl+C.
 //
 // Built with the .NET Framework csc.exe that ships with Windows — no NuGet packages.
 
 using System;
+using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -27,9 +34,9 @@ internal static class Program
         if (args.Length < 1)
         {
             Console.Error.WriteLine("Usage: wasapi-loopback.exe <output.wav>");
+            Console.Error.WriteLine("       wasapi-loopback.exe --segments <outDir> <segSeconds>");
             return 2;
         }
-        string outPath = args[0];
 
         Console.CancelKeyPress += (s, e) => { e.Cancel = true; _stop = true; };
         // Stop when the host closes/writes stdin.
@@ -39,7 +46,19 @@ internal static class Program
 
         try
         {
-            Record(outPath);
+            var audio = SetupAudio();
+            if (args[0] == "--segments")
+            {
+                if (args.Length < 3) { Console.Error.WriteLine("--segments requires <outDir> <segSeconds>"); return 2; }
+                string outDir = args[1];
+                double segSeconds = double.Parse(args[2], CultureInfo.InvariantCulture);
+                Directory.CreateDirectory(outDir);
+                RecordSegmented(audio, outDir, segSeconds);
+            }
+            else
+            {
+                RecordSingleFile(audio, args[0]);
+            }
             return 0;
         }
         catch (Exception ex)
@@ -49,7 +68,21 @@ internal static class Program
         }
     }
 
-    private static void Record(string outPath)
+    // ---- shared WASAPI setup ------------------------------------------------
+
+    private class AudioSetup
+    {
+        public IAudioClient Client;
+        public IAudioCaptureClient Capture;
+        public int Channels;
+        public int BytesPerSample;
+        public int FrameSize;
+        public uint SampleRate;
+        public uint BufferFrameCount;
+        public SampleType Type;
+    }
+
+    private static AudioSetup SetupAudio()
     {
         var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
         IMMDevice device;
@@ -76,57 +109,156 @@ internal static class Program
         object captureObj;
         Guid iidCapture = typeof(IAudioCaptureClient).GUID;
         Marshal.ThrowExceptionForHR(audioClient.GetService(ref iidCapture, out captureObj));
-        var capture = (IAudioCaptureClient)captureObj;
-
-        int channels = fmt.nChannels;
-        int bytesPerSample = fmt.wBitsPerSample / 8;
-        int frameSize = fmt.nBlockAlign;
-        uint sampleRate = fmt.nSamplesPerSec;
 
         Console.Error.WriteLine(string.Format(
             "[wasapi] capturing {0} Hz, {1} ch, {2}-bit {3} -> mono 16-bit WAV",
-            sampleRate, channels, fmt.wBitsPerSample, sampleType));
+            fmt.nSamplesPerSec, fmt.nChannels, fmt.wBitsPerSample, sampleType));
 
+        return new AudioSetup
+        {
+            Client = audioClient,
+            Capture = (IAudioCaptureClient)captureObj,
+            Channels = fmt.nChannels,
+            BytesPerSample = fmt.wBitsPerSample / 8,
+            FrameSize = fmt.nBlockAlign,
+            SampleRate = fmt.nSamplesPerSec,
+            BufferFrameCount = bufferFrameCount,
+            Type = sampleType,
+        };
+    }
+
+    // ---- mode 1: single continuous file (unchanged behavior) --------------
+
+    private static void RecordSingleFile(AudioSetup a, string outPath)
+    {
         using (var fs = new FileStream(outPath, FileMode.Create, FileAccess.Write))
         {
-            WriteWavHeader(fs, sampleRate); // patched on close
+            WriteWavHeader(fs, a.SampleRate);
             long dataBytes = 0;
-            byte[] raw = new byte[bufferFrameCount * frameSize];
+            byte[] raw = new byte[a.BufferFrameCount * a.FrameSize];
+            int sleepMs = SleepMs(a);
 
-            int sleepMs = (int)(1000.0 * bufferFrameCount / sampleRate / 2.0);
-            if (sleepMs < 1) sleepMs = 1;
-
-            Marshal.ThrowExceptionForHR(audioClient.Start());
+            Marshal.ThrowExceptionForHR(a.Client.Start());
             while (!_stop)
             {
                 Thread.Sleep(sleepMs);
-                uint packet;
-                Marshal.ThrowExceptionForHR(capture.GetNextPacketSize(out packet));
-                while (packet != 0)
+                dataBytes += DrainPackets(a, ref raw, (bytes, count) => fs.Write(bytes, 0, count));
+            }
+            Marshal.ThrowExceptionForHR(a.Client.Stop());
+            PatchWavHeader(fs, dataBytes);
+        }
+    }
+
+    // ---- mode 2: rolling N-second segments (live mode) ---------------------
+
+    private static void RecordSegmented(AudioSetup a, string outDir, double segSeconds)
+    {
+        byte[] raw = new byte[a.BufferFrameCount * a.FrameSize];
+        int sleepMs = SleepMs(a);
+        long bytesPerSecond = a.SampleRate * 2L; // mono 16-bit output
+        long targetBytes = (long)(segSeconds * bytesPerSecond);
+
+        string manifestPath = Path.Combine(outDir, "segments.jsonl");
+        using (var manifest = new StreamWriter(new FileStream(manifestPath, FileMode.Create, FileAccess.Write, FileShare.Read)))
+        {
+            manifest.AutoFlush = true;
+            int index = 0;
+            long segmentStartMs = 0;
+
+            FileStream cur = OpenSegment(outDir, index, a.SampleRate);
+            long curBytes = 0;
+
+            Marshal.ThrowExceptionForHR(a.Client.Start());
+            while (!_stop)
+            {
+                Thread.Sleep(sleepMs);
+                curBytes += DrainPackets(a, ref raw, (bytes, count) => cur.Write(bytes, 0, count));
+
+                if (curBytes >= targetBytes)
                 {
-                    IntPtr pData; uint frames; uint flags; long devPos; long qpc;
-                    Marshal.ThrowExceptionForHR(capture.GetBuffer(out pData, out frames, out flags, out devPos, out qpc));
-                    int byteCount = (int)(frames * frameSize);
-                    byte[] outBytes;
-                    if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 || pData == IntPtr.Zero)
-                    {
-                        outBytes = new byte[frames * 2]; // mono int16 silence
-                    }
-                    else
-                    {
-                        if (raw.Length < byteCount) raw = new byte[byteCount];
-                        Marshal.Copy(pData, raw, 0, byteCount);
-                        outBytes = DownmixToMono16(raw, (int)frames, channels, bytesPerSample, sampleType);
-                    }
-                    fs.Write(outBytes, 0, outBytes.Length);
-                    dataBytes += outBytes.Length;
-                    Marshal.ThrowExceptionForHR(capture.ReleaseBuffer(frames));
-                    Marshal.ThrowExceptionForHR(capture.GetNextPacketSize(out packet));
+                    long durationMs = (long)(curBytes * 1000.0 / bytesPerSecond);
+                    FinalizeSegment(cur, curBytes, index, outDir, segmentStartMs, durationMs, manifest);
+                    segmentStartMs += durationMs;
+                    index++;
+                    cur = OpenSegment(outDir, index, a.SampleRate);
+                    curBytes = 0;
                 }
             }
-            Marshal.ThrowExceptionForHR(audioClient.Stop());
-            PatchWavHeader(fs, dataBytes, sampleRate);
+            Marshal.ThrowExceptionForHR(a.Client.Stop());
+
+            // Finalize whatever's left in the current (possibly short) segment.
+            if (curBytes > 0)
+            {
+                long durationMs = (long)(curBytes * 1000.0 / bytesPerSecond);
+                FinalizeSegment(cur, curBytes, index, outDir, segmentStartMs, durationMs, manifest);
+            }
+            else
+            {
+                cur.Close();
+                try { File.Delete(SegmentPath(outDir, index)); } catch { /* ignore */ }
+            }
         }
+    }
+
+    private static string SegmentPath(string outDir, int index)
+    {
+        return Path.Combine(outDir, "seg_" + index.ToString("D5", CultureInfo.InvariantCulture) + ".wav");
+    }
+
+    private static FileStream OpenSegment(string outDir, int index, uint sampleRate)
+    {
+        var fs = new FileStream(SegmentPath(outDir, index), FileMode.Create, FileAccess.Write);
+        WriteWavHeader(fs, sampleRate);
+        return fs;
+    }
+
+    private static void FinalizeSegment(FileStream fs, long dataBytes, int index, string outDir, long startMs, long durationMs, StreamWriter manifest)
+    {
+        PatchWavHeader(fs, dataBytes);
+        fs.Dispose();
+        manifest.WriteLine(string.Format(
+            CultureInfo.InvariantCulture,
+            "{{\"index\":{0},\"file\":\"{1}\",\"startMs\":{2},\"durationMs\":{3}}}",
+            index, Path.GetFileName(SegmentPath(outDir, index)), startMs, durationMs));
+    }
+
+    // ---- shared packet draining ---------------------------------------------
+
+    private static int SleepMs(AudioSetup a)
+    {
+        int ms = (int)(1000.0 * a.BufferFrameCount / a.SampleRate / 2.0);
+        return ms < 1 ? 1 : ms;
+    }
+
+    /// Reads all currently-available packets and hands each converted mono-16 chunk to `write`.
+    /// Returns the total bytes written.
+    private static long DrainPackets(AudioSetup a, ref byte[] raw, Action<byte[], int> write)
+    {
+        long total = 0;
+        uint packet;
+        Marshal.ThrowExceptionForHR(a.Capture.GetNextPacketSize(out packet));
+        while (packet != 0)
+        {
+            IntPtr pData; uint frames; uint flags; long devPos; long qpc;
+            Marshal.ThrowExceptionForHR(a.Capture.GetBuffer(out pData, out frames, out flags, out devPos, out qpc));
+            int byteCount = (int)(frames * a.FrameSize);
+            byte[] outBytes;
+            if ((flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0 || pData == IntPtr.Zero)
+            {
+                outBytes = new byte[frames * 2]; // mono int16 silence
+            }
+            else
+            {
+                if (raw.Length < byteCount) raw = new byte[byteCount];
+                Marshal.Copy(pData, raw, 0, byteCount);
+                outBytes = DownmixToMono16(raw, (int)frames, a.Channels, a.BytesPerSample, a.Type);
+            }
+            write(outBytes, outBytes.Length);
+            total += outBytes.Length;
+            Marshal.ThrowExceptionForHR(a.Capture.ReleaseBuffer(frames));
+            Marshal.ThrowExceptionForHR(a.Capture.GetNextPacketSize(out packet));
+        }
+        return total;
     }
 
     private enum SampleType { Float32, Int16, Int32, Int24, Unknown }
@@ -217,7 +349,7 @@ internal static class Program
         bw.Flush();
     }
 
-    private static void PatchWavHeader(FileStream fs, long dataBytes, uint sampleRate)
+    private static void PatchWavHeader(FileStream fs, long dataBytes)
     {
         fs.Flush();
         long fileSize = 44 + dataBytes;

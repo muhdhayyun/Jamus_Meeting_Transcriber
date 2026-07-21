@@ -6,6 +6,38 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-21
+
+Live transcription while recording, a rolling AI summary, and a standalone packaged executable.
+
+### Added
+- **Live Transcript tab**: while recording, audio is captured in rolling ~12s segments
+  (instead of one file at the end) and each segment is transcribed on the GPU as soon as
+  it's ready, so the transcript fills in during the meeting instead of only after you stop.
+- **Live Summary tab**: a rolling "what's happened so far" summary (Ollama by default —
+  local, free, unlimited; Groq optional) refreshed periodically during the recording, so
+  you can catch up on a meeting without waiting for it to end.
+- **Local LLM support (Ollama)**: new Settings → Live Mode section to pick the summary
+  provider (Ollama/Groq/off), model, refresh interval, and segment length.
+- **Standalone packaged executable** (`npm run package` → `release/win-unpacked/Jamus.exe`,
+  via electron-builder) — bundles FFmpeg, the WASAPI recorder, whisper.cpp + models, and
+  CUDA DLLs, so it runs without VS Code, Node, or any manual setup. A desktop shortcut is
+  created automatically.
+- **CLI `--live`** on `jamus run` — prints the transcript and rolling summary to the
+  terminal as the meeting happens, for parity with the desktop app.
+- Segmented capture support in the native WASAPI recorder (`--segments <dir> <seconds>`)
+  and in FFmpeg mic capture, each with an exact per-segment timing manifest, so live and
+  batch recording share the same underlying capture code.
+
+### Notes
+- Once a live recording stops, its segments are stitched into normal `mic.wav`/`system.wav`
+  files and the accumulated transcript is saved — the resulting meeting is indistinguishable
+  from a non-live recording afterward (same rename/delete-audio/insights features apply).
+- Live mode requires Windows (WASAPI); the underlying batch recording path is unchanged
+  and still used by `jamus record`/`transcribe` for CLI workflows.
+- The packaged build is a few GB (bundles the Whisper model, CUDA runtime, and FFmpeg) —
+  expected, since the goal is zero additional installs.
+
 ## [0.5.0] - 2026-06-01
 
 ### Added

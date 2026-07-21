@@ -24,13 +24,17 @@ export function assertWasapiBuilt() {
 }
 
 /**
- * Captures the default render endpoint via WASAPI loopback to a mono 16-bit WAV.
+ * Captures the default render endpoint via WASAPI loopback.
  * Mirrors the FfmpegCapture interface so the recorder can treat both uniformly.
+ *
+ * Pass either `outFile` (single continuous WAV, normal recordings) or `segments`
+ * `{ outDir, segSeconds }` (rolling segments, used by live transcription).
  */
 export class WasapiCapture {
-  constructor({ label, outFile }) {
+  constructor({ label, outFile, segments }) {
     this.label = label;
     this.outFile = outFile;
+    this.segments = segments;
     this.proc = null;
     this.startedAt = null;
     this.stderr = '';
@@ -38,7 +42,10 @@ export class WasapiCapture {
   }
 
   start() {
-    this.proc = spawn(wasapiExePath(), [this.outFile], { stdio: ['pipe', 'ignore', 'pipe'] });
+    const args = this.segments
+      ? ['--segments', this.segments.outDir, String(this.segments.segSeconds)]
+      : [this.outFile];
+    this.proc = spawn(wasapiExePath(), args, { stdio: ['pipe', 'ignore', 'pipe'] });
     this.startedAt = Date.now();
 
     this.proc.stderr.on('data', (d) => { this.stderr += d.toString(); });

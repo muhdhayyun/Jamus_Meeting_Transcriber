@@ -24,6 +24,12 @@ transcripts/*
 # Compiled native helper (rebuilt via `npm run build:wasapi`)
 native/*.exe
 
+# Bundled FFmpeg for packaging (copy your own into vendor/ffmpeg/, see README)
+vendor/
+
+# electron-builder packaged output
+release/
+
 # Logs
 *.log
 npm-debug.log*

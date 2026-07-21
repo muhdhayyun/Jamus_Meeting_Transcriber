@@ -17,6 +17,7 @@ import { transcribeSession } from './pipeline/transcribeSession.js';
 import { KNOWN_MODELS, validateModel, isModelDownloaded, ensureModel, isBuilt } from './transcriber/modelManager.js';
 import { writeInsightsForSession } from './insights/groq.js';
 import { importAudioFile } from './pipeline/importAudio.js';
+import { LiveSession } from './pipeline/liveSession.js';
 
 export async function run(argv) {
   const program = new Command();
@@ -62,6 +63,7 @@ export async function run(argv) {
     .option('--me <name>', 'label for your own voice')
     .option('--others <name>', 'label for other participants')
     .option('--insights', 'also generate AI insights via Groq after transcribing')
+    .option('--live', 'show the transcript (and rolling summary) in the terminal as it happens')
     .action((opts) => cmdRun(opts));
 
   program
@@ -156,6 +158,8 @@ async function cmdTranscribe(sessionRef, opts) {
 
 // ---------------------------------------------------------------- run
 async function cmdRun(opts) {
+  if (opts.live) return cmdRunLive(opts);
+
   const cfg = loadConfig();
   assertFfmpegAvailable();
   const session = await startRecording(cfg, opts);
@@ -173,6 +177,50 @@ async function cmdRun(opts) {
     labels,
   });
   await maybeInsights(cfg, session, opts);
+}
+
+// ---------------------------------------------------------------- run --live
+async function cmdRunLive(opts) {
+  const cfg = loadConfig();
+  assertFfmpegAvailable();
+  const { mic } = await resolveDevices(cfg, { ...opts, system: 'wasapi' });
+
+  logger.info('');
+  logger.info(chalk.bold(`Live recording "${opts.title || 'Untitled meeting'}"`));
+  logger.dim(`  mic    → ${mic}`);
+  logger.dim('  system → WASAPI loopback (default output device)');
+  logger.info('');
+  logger.success('Recording… transcript appears below as people speak. Press Enter (or Ctrl+C) to stop.\n');
+
+  let printedCount = 0;
+  const live = new LiveSession(cfg, { title: opts.title, mic }, {
+    onTranscript: (timeline) => {
+      for (let i = printedCount; i < timeline.length; i++) {
+        const t = timeline[i];
+        logger.info(`${chalk.dim(`[${formatClock(t.start)}]`)} ${chalk.bold(t.speaker)}: ${t.text}`);
+      }
+      printedCount = timeline.length;
+    },
+    onSummary: (text) => {
+      logger.info(chalk.dim('\n───── Live summary ─────'));
+      logger.info(text);
+      logger.info(chalk.dim('────────────────────────\n'));
+    },
+    onStatus: (msg) => logger.dim(msg),
+  });
+
+  await live.start();
+  await waitForStop();
+  const result = await live.stop({ insights: !!opts.insights });
+  logger.success(`\nSaved: jamus transcribe ${result.id}   (or just re-open it in the app)`);
+}
+
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }
 
 // ---------------------------------------------------------------- transcribe-file

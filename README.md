@@ -45,6 +45,9 @@ merged into one chronological transcript. The "me vs. others" split is therefore
    - **Linux:** use the PulseAudio/PipeWire `.monitor` source (already present).
 5. **🎧 Use headphones.** If the call plays through speakers, your mic re-records it and you get
    duplicated text in both streams.
+6. **Ollama** (optional — only for the Live Summary tab): install from [ollama.com](https://ollama.com),
+   then `ollama pull llama3.1:8b`. Not needed for recording/transcription, and Live Summary can be
+   set to "Off" or "Groq" instead in Settings if you'd rather skip this.
 
 > The default model is `large-v3-turbo` (~1.5 GB) — v3-family accuracy at 2–4× the speed of full
 > `large-v3` on CPU. For maximum accuracy use `--model large-v3`; for max speed `--model small.en`.
@@ -72,11 +75,43 @@ commands as `node bin/jamus.js <command>` or `npm run <script>`.
 npm run app
 ```
 
-Opens the Jamus window: pick your mic, click **New recording**, hit **Stop & transcribe**,
-and read the speaker-separated transcript. **Settings** lets you set the model, speaker labels,
-storage cap, and your **Groq API key** for AI insights (Summary / Action items / Key decisions /
-Topics & open questions). Insights are off until you add a key; note the transcript is then sent to
-Groq's cloud. The launcher auto-clears `ELECTRON_RUN_AS_NODE` so it works from any terminal.
+Opens the Jamus window: pick your mic, click **New recording**, hit **Stop & finish**,
+and read the speaker-separated transcript. While recording, two tabs update live:
+
+- **Live Transcript** — fills in as people speak (audio is captured in rolling ~12s segments
+  and each is transcribed on the GPU as soon as it's ready, instead of waiting until you stop).
+- **Live Summary** — a rolling "what's happened so far" summary, refreshed periodically, so you
+  can catch up on a meeting without waiting for it to end. Uses a local **Ollama** model by
+  default (free, no API key, nothing leaves your machine) or Groq if you prefer.
+
+**Settings** lets you set the model, speaker labels, storage cap, the live-mode provider/segment
+length, and your **Groq API key** for post-meeting AI insights (Summary / Action items / Key
+decisions / Topics & open questions). Both Groq features are opt-in; using Groq sends transcript
+text to their cloud. The launcher auto-clears `ELECTRON_RUN_AS_NODE` so it works from any terminal.
+
+### Standalone executable (no terminal needed)
+
+```bash
+npm run package
+```
+
+Builds `release/win-unpacked/Jamus.exe` via electron-builder — a self-contained copy of the app
+with FFmpeg, the WASAPI recorder, whisper.cpp, the Whisper model, and CUDA runtime all bundled, so
+it runs with **zero additional installs**. Double-click `Jamus.exe` (a desktop shortcut is created
+the first time you build it) instead of running anything from VS Code. The build is a few GB —
+that's expected, since everything needed to run is included.
+
+> Live mode (and WASAPI system-audio capture in general) requires **Windows**. `npm run package`
+> targets Windows; the underlying CLI/engine remain cross-platform for mic-only + batch use.
+
+### Live mode from the CLI
+
+```bash
+jamus run --live
+```
+
+Prints the transcript and rolling summary straight to the terminal as the meeting happens —
+the same engine as the desktop app's live tabs, for anyone who prefers the command line.
 
 ## Transcribe an existing recording (phone memo, mp3, m4a…)
 

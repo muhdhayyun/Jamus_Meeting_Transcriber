@@ -10,10 +10,11 @@ const imp = (rel) => import(pathToFileURL(path.join(__dirname, rel)).href);
 
 let core = null;
 let mainWindow = null;
-let recordingState = null; // { cfg, session, stopResolver, donePromise }
+let recordingState = null; // { cfg, session, stopResolver, donePromise } (batch/non-live recording)
+let liveSessionInstance = null; // a LiveSession instance while a live recording is active
 
 async function loadCore() {
-  const [config, ffmpeg, enumerate, loopback, session, recorder, wasapi, transcribe, modelManager, groq, meetings, storage, importAudio] =
+  const [config, ffmpeg, enumerate, loopback, session, recorder, wasapi, transcribe, modelManager, groq, meetings, storage, importAudio, liveSession, liveSummary] =
     await Promise.all([
       imp('../src/config.js'),
       imp('../src/utils/ffmpeg.js'),
@@ -28,6 +29,8 @@ async function loadCore() {
       imp('../src/pipeline/meetings.js'),
       imp('../src/utils/storage.js'),
       imp('../src/pipeline/importAudio.js'),
+      imp('../src/pipeline/liveSession.js'),
+      imp('../src/insights/liveSummary.js'),
     ]);
   core = {
     loadConfig: config.loadConfig,
@@ -53,6 +56,8 @@ async function loadCore() {
     deleteAllAudio: meetings.deleteAllAudio,
     recordingsSize: storage.recordingsSize,
     importAudioFile: importAudio.importAudioFile,
+    LiveSession: liveSession.LiveSession,
+    isOllamaReachable: liveSummary.isOllamaReachable,
   };
 }
 
@@ -113,7 +118,7 @@ ipcMain.handle('devices:list', async () => core.listAudioDevices().devices);
 // ---- settings ----------------------------------------------------------
 ipcMain.handle('settings:get', async () => {
   const cfg = core.loadConfig();
-  return { model: cfg.model, language: cfg.language, labels: cfg.labels, devices: cfg.devices, storage: cfg.storage, groq: cfg.groq };
+  return { model: cfg.model, language: cfg.language, labels: cfg.labels, devices: cfg.devices, storage: cfg.storage, groq: cfg.groq, live: cfg.live };
 });
 
 ipcMain.handle('settings:save', async (_e, partial) => {
@@ -182,6 +187,7 @@ ipcMain.handle('open:dropin', async () => {
 // ---- recording ---------------------------------------------------------
 ipcMain.handle('record:start', async (_e, { title, mic }) => {
   if (recordingState) throw new Error('Already recording.');
+  if (liveSessionInstance) throw new Error('A live recording is already in progress.');
   const cfg = core.loadConfig();
   core.assertFfmpegAvailable();
   if (isWin) core.assertWasapiBuilt();
@@ -246,4 +252,48 @@ ipcMain.handle('insights:generate', async (_e, id) => {
   const cfg = core.loadConfig();
   const session = core.loadSession(cfg, id);
   return core.writeInsightsForSession(cfg, session);
+});
+
+// ---- live recording (rolling transcript + summary while recording) -----
+ipcMain.handle('live:status', async () => {
+  const cfg = core.loadConfig();
+  const provider = cfg.live?.summaryProvider || 'off';
+  let ollamaOk = true;
+  if (provider === 'ollama') ollamaOk = await core.isOllamaReachable(cfg.live?.ollama?.url);
+  return { enabled: cfg.live?.enabled !== false, provider, ollamaOk, segmentSeconds: cfg.live?.segmentSeconds ?? 12 };
+});
+
+ipcMain.handle('live:start', async (_e, { title, mic }) => {
+  if (recordingState) throw new Error('A recording is already in progress.');
+  if (liveSessionInstance) throw new Error('Already recording.');
+  const cfg = core.loadConfig();
+  core.assertFfmpegAvailable();
+
+  const { devices } = core.listAudioDevices();
+  const micId = mic || cfg.devices.mic || core.pickMic(devices)?.id;
+  if (!micId) throw new Error('No microphone available.');
+
+  const inst = new core.LiveSession(cfg, { title, mic: micId }, {
+    onTranscript: (timeline) => mainWindow?.webContents.send('live:transcript', timeline),
+    onSummary: (text) => mainWindow?.webContents.send('live:summary', text),
+    onStatus: (msg) => status(msg),
+  });
+  const info = await inst.start();
+  liveSessionInstance = inst;
+  return info;
+});
+
+ipcMain.handle('live:stop', async (_e, { insights } = {}) => {
+  if (!liveSessionInstance) throw new Error('Not recording.');
+  const inst = liveSessionInstance;
+  liveSessionInstance = null;
+  return inst.stop({ insights });
+});
+
+ipcMain.handle('live:cancel', async () => {
+  if (!liveSessionInstance) return false;
+  const inst = liveSessionInstance;
+  liveSessionInstance = null;
+  await inst.cancel();
+  return true;
 });

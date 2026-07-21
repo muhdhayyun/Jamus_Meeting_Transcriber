@@ -2,15 +2,21 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const isWin = os.platform() === 'win32';
 const exe = (name) => (isWin ? `${name}.exe` : name);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
 
 const cache = {};
 
 /** Common locations to look for ffmpeg/ffprobe when they aren't on PATH. */
 function candidateDirs() {
   const dirs = [];
+  // Bundled copy shipped with the packaged app (or checked into vendor/ locally).
+  dirs.push(path.join(PROJECT_ROOT, 'vendor', 'ffmpeg'));
+
   const toolsRoot = path.join(os.homedir(), 'tools');
   try {
     if (fs.existsSync(toolsRoot)) {

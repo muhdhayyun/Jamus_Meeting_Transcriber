@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { ffprobeBin, ffmpegBin } from './ffmpeg.js';
 import { fileExists } from './fsx.js';
@@ -34,6 +36,29 @@ export function convertAudioTo16kMono(src, dest) {
     { encoding: 'utf8' }
   );
   return res.status === 0 && fileExists(dest);
+}
+
+/**
+ * Concatenate WAV files that share the same format (sample rate/channels/codec) into
+ * one output file via ffmpeg's concat demuxer (stream copy — no re-encoding).
+ * Used to stitch finalized live-mode segments back into a single session WAV.
+ * Returns true on success (or if `files` is empty, in which case an empty-ish dest is not created).
+ */
+export function concatWavFiles(files, dest) {
+  if (!files.length) return false;
+  const listFile = path.join(os.tmpdir(), `jamus-concat-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`);
+  const escape = (p) => p.replace(/'/g, "'\\''");
+  fs.writeFileSync(listFile, files.map((f) => `file '${escape(f)}'`).join('\n'), 'utf8');
+  try {
+    const res = spawnSync(
+      ffmpegBin(),
+      ['-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listFile, '-c', 'copy', '-y', dest],
+      { encoding: 'utf8' }
+    );
+    return res.status === 0 && fileExists(dest);
+  } finally {
+    try { fs.unlinkSync(listFile); } catch { /* ignore */ }
+  }
 }
 
 /** Convert a WAV in place to 16 kHz mono pcm_s16le (Whisper's required format). */

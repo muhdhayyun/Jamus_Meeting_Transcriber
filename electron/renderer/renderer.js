@@ -21,6 +21,10 @@ let state = {
   recStart: 0,
   status: null,
   settings: null,
+  liveTab: 'transcript',
+  liveTimeline: [],
+  liveSummary: '',
+  liveUnsubs: [],
 };
 
 // ---------- helpers ----------
@@ -67,6 +71,18 @@ function renderMarkdown(md, labels) {
   }
   closeList();
   return html;
+}
+
+/** Render a live in-progress timeline ([{start,speaker,text}]) the same way the markdown turns look. */
+function renderLiveTurns(timeline, labels) {
+  const me = labels?.me || 'Me';
+  if (!timeline.length) {
+    return `<div class="live-placeholder">Listening… the transcript will appear here as people speak.</div>`;
+  }
+  return timeline.map((t) => {
+    const cls = t.speaker === me ? 'me' : 'them';
+    return `<div class="turn"><span class="who ${cls}">${esc(t.speaker)}</span><span class="ts">${esc(fmtDur(t.start))}</span><div class="txt">${inline(t.text)}</div></div>`;
+  }).join('');
 }
 
 // ---------- data ----------
@@ -152,7 +168,7 @@ async function startRecording() {
   $('#startRec').disabled = true;
   setStatus('Starting…');
   try {
-    await J.startRecording({ title, mic });
+    await J.startLive({ title, mic });
   } catch (err) {
     setStatus(null);
     alert('Could not start recording:\n\n' + err.message);
@@ -161,19 +177,29 @@ async function startRecording() {
   setStatus(null);
   state.recording = true;
   state.recStart = Date.now();
+  state.liveTimeline = [];
+  state.liveSummary = '';
+  state.liveTab = 'transcript';
   renderRecording(title);
 }
 
 function renderRecording(title) {
   view.innerHTML = `
     <div class="recording-view">
-      <div class="pulse">●</div>
-      <div class="timer" id="recTimerEl">00:00:00</div>
-      <div class="rec-sub">Recording “${esc(title)}” — your mic + system audio</div>
-      <div class="rec-actions">
-        <button class="btn danger" id="stopRec">■ Stop &amp; transcribe</button>
-        <button class="btn" id="cancelRec">Cancel</button>
+      <div class="rec-header">
+        <div class="pulse">●</div>
+        <div class="timer" id="recTimerEl">00:00:00</div>
+        <div class="rec-sub">Recording “${esc(title)}” — your mic + system audio</div>
+        <div class="rec-actions">
+          <button class="btn danger" id="stopRec">■ Stop &amp; finish</button>
+          <button class="btn" id="cancelRec">Cancel</button>
+        </div>
+        <div class="tabs" style="margin:14px 0 0;">
+          <div class="tab ${state.liveTab === 'transcript' ? 'active' : ''}" data-livetab="transcript"><span class="live-dot"></span>Live Transcript</div>
+          <div class="tab ${state.liveTab === 'summary' ? 'active' : ''}" data-livetab="summary">Live Summary</div>
+        </div>
       </div>
+      <div class="rec-live" id="recLive"></div>
     </div>`;
   clearInterval(state.recTimer);
   state.recTimer = setInterval(() => {
@@ -181,6 +207,34 @@ function renderRecording(title) {
   }, 500);
   $('#stopRec').addEventListener('click', stopRecording);
   $('#cancelRec').addEventListener('click', cancelRecording);
+  view.querySelectorAll('[data-livetab]').forEach((t) => t.addEventListener('click', () => {
+    state.liveTab = t.dataset.livetab;
+    view.querySelectorAll('[data-livetab]').forEach((x) => x.classList.toggle('active', x === t));
+    paintLive();
+  }));
+
+  // Subscribe to live updates for the duration of this recording view.
+  const labels = state.settings?.labels || { me: 'Me', participants: 'Participants' };
+  state.liveUnsubs.push(J.onLiveTranscript((timeline) => { state.liveTimeline = timeline; if (state.liveTab === 'transcript') paintLive(); }));
+  state.liveUnsubs.push(J.onLiveSummary((text) => { state.liveSummary = text; if (state.liveTab === 'summary') paintLive(); }));
+  paintLive();
+
+  function paintLive() {
+    const el = $('#recLive');
+    if (!el) return;
+    if (state.liveTab === 'transcript') {
+      el.innerHTML = `<div class="md">${renderLiveTurns(state.liveTimeline, labels)}</div>`;
+    } else {
+      el.innerHTML = state.liveSummary
+        ? `<div class="md">${renderMarkdown(state.liveSummary, labels)}</div>`
+        : `<div class="live-placeholder">Building a summary from the conversation so far — check back shortly.</div>`;
+    }
+  }
+}
+
+function unsubscribeLive() {
+  state.liveUnsubs.forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+  state.liveUnsubs = [];
 }
 
 async function stopRecording() {
@@ -188,13 +242,14 @@ async function stopRecording() {
   state.recording = false;
   $('#stopRec').disabled = true;
   $('#cancelRec').disabled = true;
+  unsubscribeLive();
   const wantInsights = !!(state.settings?.groq?.enabled && state.settings?.groq?.apiKey);
   let result;
   try {
-    result = await J.stopRecording({ insights: wantInsights });
+    result = await J.stopLive({ insights: wantInsights });
   } catch (err) {
     setStatus(null);
-    alert('Transcription failed:\n\n' + err.message);
+    alert('Finishing the recording failed:\n\n' + err.message);
     return renderEmpty();
   }
   setStatus(null);
@@ -205,7 +260,8 @@ async function stopRecording() {
 async function cancelRecording() {
   clearInterval(state.recTimer);
   state.recording = false;
-  await J.cancelRecording().catch(() => {});
+  unsubscribeLive();
+  await J.cancelLive().catch(() => {});
   setStatus(null);
   renderEmpty();
 }
@@ -392,6 +448,26 @@ async function openSettings() {
       <div class="hint">Frees the most space. Transcripts &amp; insights are kept; meetings stay listed.</div>
     </div>
 
+    <div class="section-title">Live Mode (while recording)</div>
+    <div class="row">
+      <div class="field">
+        <label>Live summary provider</label>
+        <select id="setLiveProvider">
+          <option value="ollama" ${(s.live?.summaryProvider ?? 'ollama') === 'ollama' ? 'selected' : ''}>Ollama (local, free)</option>
+          <option value="groq" ${s.live?.summaryProvider === 'groq' ? 'selected' : ''}>Groq (cloud)</option>
+          <option value="off" ${s.live?.summaryProvider === 'off' ? 'selected' : ''}>Off</option>
+        </select>
+      </div>
+      <div class="field"><label>Summary refresh (seconds)</label><input type="number" id="setLiveInterval" min="15" value="${esc(s.live?.summaryIntervalSec ?? 45)}" /></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Ollama model</label><input type="text" id="setOllamaModel" value="${esc(s.live?.ollama?.model || 'llama3.1:8b')}" /></div>
+      <div class="field"><label>Ollama URL</label><input type="text" id="setOllamaUrl" value="${esc(s.live?.ollama?.url || 'http://127.0.0.1:11434')}" /></div>
+    </div>
+    <div class="field"><label>Live segment length (seconds)</label><input type="number" id="setSegSeconds" min="5" max="60" value="${esc(s.live?.segmentSeconds ?? 12)}" />
+      <div class="hint">Shorter = lower latency but slightly choppier sentence breaks; longer = smoother text, a bit more delay.</div>
+    </div>
+
     <div class="section-title">AI Insights (Groq)</div>
     <div class="field toggle-row">
       <label style="margin:0;">Auto-generate insights after each meeting</label>
@@ -429,6 +505,15 @@ async function saveSettings() {
     language: $('#setLang').value.trim() || 'auto',
     labels: { me: $('#setMe').value.trim() || 'Me', participants: $('#setOthers').value.trim() || 'Participants' },
     storage: { maxRecordingsGB: Number($('#setCap').value) || 20 },
+    live: {
+      summaryProvider: $('#setLiveProvider').value,
+      summaryIntervalSec: Number($('#setLiveInterval').value) || 45,
+      segmentSeconds: Number($('#setSegSeconds').value) || 12,
+      ollama: {
+        model: $('#setOllamaModel').value.trim() || 'llama3.1:8b',
+        url: $('#setOllamaUrl').value.trim() || 'http://127.0.0.1:11434',
+      },
+    },
     groq: {
       enabled: $('#setGroqEnabled').checked,
       apiKey: $('#setGroqKey').value.trim(),

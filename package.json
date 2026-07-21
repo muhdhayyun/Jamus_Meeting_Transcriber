@@ -1,6 +1,6 @@
 {
   "name": "jamus",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Local, privacy-first meeting transcriber. Records your mic + system audio separately and produces a speaker-separated Markdown transcript using local Whisper. No cloud, no API keys.",
   "type": "module",
   "main": "electron/main.cjs",
@@ -19,7 +19,9 @@
     "build": "node scripts/build-whisper.mjs && node scripts/build-wasapi.mjs",
     "build:whisper": "node scripts/build-whisper.mjs",
     "build:whisper:cuda": "node scripts/build-whisper.mjs --cuda",
-    "build:wasapi": "node scripts/build-wasapi.mjs"
+    "build:wasapi": "node scripts/build-wasapi.mjs",
+    "package": "electron-builder --dir",
+    "package:installer": "electron-builder --win nsis"
   },
   "keywords": [
     "meeting",
@@ -41,6 +43,31 @@
     "ora": "^8.1.1"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.jamus.app",
+    "productName": "Jamus",
+    "directories": {
+      "output": "release"
+    },
+    "asar": false,
+    "compression": "store",
+    "files": [
+      "bin/**/*",
+      "electron/**/*",
+      "src/**/*",
+      "config/**/*",
+      "native/**/*",
+      "vendor/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/electron-builder/**/*",
+      "!node_modules/.bin/**/*"
+    ],
+    "win": {
+      "target": "dir"
+    }
   }
 }
