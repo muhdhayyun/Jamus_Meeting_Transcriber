@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 
 ## [Unreleased]
 
+### Added
+- `CLAUDE.md` — guidance for Claude Code sessions working in this repo (commands, architecture,
+  key gotchas: the CLI/live pipeline split, the CJS Electron main process, `ELECTRON_RUN_AS_NODE`,
+  driving whisper.cpp directly instead of through the `nodejs-whisper` wrapper, etc.).
+
 ## [0.6.0] - 2026-07-21
 
 Live transcription while recording, a rolling AI summary, and a standalone packaged executable.
