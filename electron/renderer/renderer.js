@@ -487,6 +487,7 @@ async function openSettings() {
     </div>
     <div class="field">
       <input type="text" id="setExcludeProcess" value="${esc(s.systemAudio?.excludeProcess || '')}" placeholder="e.g. Spotify.exe" />
+      <div class="hint" id="setExcludeStatus"></div>
       <div class="hint">That app's sound is left out of the recording; everything else you hear is still captured. Only one app at a time. Windows 10 2004+ / Windows 11 only. Leave blank (or turn the toggle off) to capture everything.</div>
     </div>
 
@@ -527,6 +528,18 @@ async function openSettings() {
         ${sec('summary', 'Summary')} ${sec('actionItems', 'Action items')} ${sec('keyDecisions', 'Key decisions')} ${sec('topicsQuestions', 'Topics & open questions')}
       </div>
     </div>`;
+  const updateExcludeStatus = () => {
+    const name = $('#setExcludeProcess').value.trim();
+    const on = $('#setExcludeEnabled').checked;
+    $('#setExcludeStatus').innerHTML = !name
+      ? 'Nothing set — type an app above, then click Save.'
+      : on
+        ? `✓ Will exclude <strong>${esc(name)}</strong> once saved.`
+        : `<strong>${esc(name)}</strong> is saved but the toggle is off — everything will be captured.`;
+  };
+  updateExcludeStatus();
+  $('#setExcludeProcess')?.addEventListener('input', updateExcludeStatus);
+  $('#setExcludeEnabled')?.addEventListener('change', updateExcludeStatus);
   $('#delAllAudio')?.addEventListener('click', async () => {
     if (!confirm("Delete the audio (.wav) for ALL meetings?\n\nFrees the most space. Transcripts and insights are kept and meetings stay listed, but you won't be able to re-transcribe any of them.")) return;
     const r = await J.deleteAllAudio().catch((e) => { alert(e.message); return null; });
