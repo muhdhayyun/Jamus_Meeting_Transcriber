@@ -7,6 +7,14 @@ adheres to [Semantic Versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
 ## [Unreleased]
 
 ### Added
+- **Exclude an app from system-audio capture** (e.g. "don't transcribe my Spotify") — Settings →
+  System Audio, or the toggle shown right on the New Recording screen. Uses Windows' per-process
+  loopback API (Windows 10 2004+ / Windows 11 only); everything else on the default output
+  device is still captured. Only one app at a time, and it can't isolate a single tab/site
+  inside a browser — that's an OS-level limitation, not an app one.
+- **Long single-speaker turns now break into readable paragraphs**: transcripts start a new
+  timestamped turn after N sentences (default 6, tunable in Settings → Transcription) instead of
+  merging an uninterrupted monologue into one unreadable block.
 - `CLAUDE.md` — guidance for Claude Code sessions working in this repo (commands, architecture,
   key gotchas: the CLI/live pipeline split, the CJS Electron main process, `ELECTRON_RUN_AS_NODE`,
   driving whisper.cpp directly instead of through the `nodejs-whisper` wrapper, etc.).

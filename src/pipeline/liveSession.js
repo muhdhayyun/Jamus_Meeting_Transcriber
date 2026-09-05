@@ -10,7 +10,7 @@ import { generateLiveSummary } from '../insights/liveSummary.js';
 import { transcribeFile } from '../transcriber/whisper.js';
 import { assertFfmpegAvailable } from '../utils/ffmpeg.js';
 import { FfmpegCapture } from '../recorder/ffmpegProcess.js';
-import { WasapiCapture, assertWasapiBuilt } from '../recorder/wasapiCapture.js';
+import { WasapiCapture, assertWasapiBuilt, effectiveExcludeProcess } from '../recorder/wasapiCapture.js';
 import { buildSegmentedCaptureArgs } from '../recorder/platform.js';
 import { ManifestTailer, segmentFilePath } from '../live/segments.js';
 import { ensureDir } from '../utils/fsx.js';
@@ -73,7 +73,11 @@ export class LiveSession {
       prefix: 'mic',
     });
     this.micCapture = new FfmpegCapture({ label: 'mic', args: micArgs });
-    this.sysCapture = new WasapiCapture({ label: 'system', segments: { outDir: this.sysSegDir, segSeconds } });
+    this.sysCapture = new WasapiCapture({
+      label: 'system',
+      segments: { outDir: this.sysSegDir, segSeconds },
+      excludeProcess: effectiveExcludeProcess(cfg),
+    });
 
     const micStart = this.micCapture.start();
     const sysStart = this.sysCapture.start();
@@ -172,6 +176,7 @@ export class LiveSession {
       systemOffsetSec: (this.session.offsets?.systemMinusMicMs ?? 0) / 1000,
       labels: this.cfg.labels,
       coalesce: true,
+      maxSentencesPerTurn: this.cfg.maxSentencesPerTurn,
     });
     this.lastTimeline = timeline;
     this.callbacks.onTranscript?.(timeline);

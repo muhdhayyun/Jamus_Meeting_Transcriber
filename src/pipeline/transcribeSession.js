@@ -32,6 +32,7 @@ export async function transcribeSession(cfg, session, { model, language, labels 
     systemOffsetSec: sysOffsetSec,
     labels,
     coalesce: cfg.coalesceSpeakerTurns,
+    maxSentencesPerTurn: cfg.maxSentencesPerTurn,
   });
 
   const durationSec = Math.max(

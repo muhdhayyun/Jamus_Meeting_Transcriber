@@ -5,6 +5,13 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** The process name to exclude from system-audio capture, or null if exclusion is off. */
+export function effectiveExcludeProcess(cfg) {
+  const sa = cfg.systemAudio;
+  if (!sa || !sa.excludeProcess || sa.enabled === false) return null;
+  return sa.excludeProcess;
+}
+
 /** Path to the compiled WASAPI loopback recorder. */
 export function wasapiExePath() {
   return path.resolve(__dirname, '..', '..', 'native', 'wasapi-loopback.exe');
@@ -29,12 +36,18 @@ export function assertWasapiBuilt() {
  *
  * Pass either `outFile` (single continuous WAV, normal recordings) or `segments`
  * `{ outDir, segSeconds }` (rolling segments, used by live transcription).
+ *
+ * `excludeProcess` (optional): a process name (e.g. "Spotify.exe") whose audio should be
+ * left out of the captured system-audio stream — everything else on the default output
+ * device is still captured. Uses Windows' per-process loopback exclusion; only one process
+ * (and its child-process tree) can be excluded per recording.
  */
 export class WasapiCapture {
-  constructor({ label, outFile, segments }) {
+  constructor({ label, outFile, segments, excludeProcess }) {
     this.label = label;
     this.outFile = outFile;
     this.segments = segments;
+    this.excludeProcess = excludeProcess;
     this.proc = null;
     this.startedAt = null;
     this.stderr = '';
@@ -45,6 +58,7 @@ export class WasapiCapture {
     const args = this.segments
       ? ['--segments', this.segments.outDir, String(this.segments.segSeconds)]
       : [this.outFile];
+    if (this.excludeProcess) args.unshift('--exclude-process', this.excludeProcess);
     this.proc = spawn(wasapiExePath(), args, { stdio: ['pipe', 'ignore', 'pipe'] });
     this.startedAt = Date.now();
 

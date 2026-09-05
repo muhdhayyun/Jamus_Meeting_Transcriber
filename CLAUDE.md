@@ -51,6 +51,13 @@ sources** — the microphone and the system's audio output — as independent fi
 each independently, tags every segment with its source ("Me" vs "Participants"), then merges
 by timestamp (`src/pipeline/merge.js`). This is exact by construction, not probabilistic.
 
+`coalesceTurns` in `merge.js` (used by both the batch path and live mode's incremental
+`_recomputeAndEmit`) merges consecutive same-speaker Whisper segments into one turn, but caps
+each turn at `config.maxSentencesPerTurn` (default 6, user-settable) sentences — otherwise one
+person talking for minutes with no reply renders as a single unreadable wall of text under one
+timestamp. The cap only decides when to *start a new turn*; it never splits mid-segment, so
+sentences stay intact.
+
 ### Platform split: Windows is the only fully-supported OS
 - **Mic capture** (`src/recorder/platform.js`, `ffmpegProcess.js`): cross-platform via FFmpeg
   (`dshow` / `avfoundation` / `pulse`).
@@ -129,6 +136,36 @@ expected, not a packaging bug.
   (`http://127.0.0.1:11434`, no key, no cloud) with Groq as an alternate provider. Different
   prompt, different call site (`LiveSession._maybeSummarize`), different config block
   (`cfg.live`) — these are two separate features that happen to both be "AI insights."
+
+### Per-process system-audio exclusion (e.g. "don't transcribe my Spotify")
+`config.systemAudio.excludeProcess` (settable in the app's Settings, or `~/.jamus/config.json`)
+names one process (e.g. `"Spotify.exe"`) whose audio is left out of the system-audio capture —
+everything else on the default output device is still captured. `config.systemAudio.enabled`
+(default `true`) is a separate on/off flag so the saved process name persists even when
+temporarily toggled off — `effectiveExcludeProcess(cfg)` in `wasapiCapture.js` is the single
+place that combines the two into "what to actually pass on the CLI", used by both
+`recorder.js` and `liveSession.js`. The New Recording screen shows the current state with a
+one-click toggle (writes straight to user config via `settings:save`); Settings has the toggle
++ text field for changing which app. Threaded through
+`WasapiCapture`/`recorder.js`/`liveSession.js` as an `--exclude-process <name>` CLI flag to
+`wasapi-loopback.exe`, implemented in `native/WasapiLoopbackRecorder.cs` using Windows' **process
+loopback API** (`ActivateAudioInterfaceAsync` on the virtual device path `"VAD\Process_Loopback"`
+with `AUDIOCLIENT_ACTIVATION_PARAMS`/`PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE`,
+Windows 10 2004+/Windows 11 only) instead of the normal `IMMDevice`-endpoint loopback. Matches
+by process name (resolves to the longest-running matching PID, i.e. the likely tree root); only
+one process can be excluded per recording (an OS API constraint, not an app one); if the named
+process isn't running when the recording starts, it silently falls back to capturing everything.
+
+Two non-obvious interop requirements this code path depends on — both cost real debugging time,
+don't remove either:
+- The `IActivateAudioInterfaceCompletionHandler` implementation (`LoopbackActivationHandler`)
+  must **also** implement the empty marker interface `IAgileObject` (GUID
+  `94EA2B94-E9CC-49E0-C0FF-EE64CA8F5B90`). Without it, `ActivateAudioInterfaceAsync` rejects the
+  call synchronously with `E_ILLEGAL_METHOD_CALL` (0x8000000E) — no callback ever fires.
+- The process-loopback virtual client does **not** implement `GetMixFormat` (returns
+  `E_NOTIMPL`) — there's no single "real" endpoint format to report. `BuildProcessLoopbackAudioSetup`
+  supplies a fixed IEEE-float/48kHz/stereo `WAVEFORMATEX` instead of querying one; the normal
+  endpoint-loopback path (`BuildAudioSetup`) is unaffected and still queries the real device format.
 
 ### Storage model
 `recordings/<session-id>/` holds `session.json` + audio; `transcripts/<session-id>.md`

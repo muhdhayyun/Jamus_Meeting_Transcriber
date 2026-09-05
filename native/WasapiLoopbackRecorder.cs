@@ -4,17 +4,27 @@
 // and writes it to mono 16-bit PCM WAV — no Stereo Mix / virtual cable required.
 //
 // Usage:
-//   wasapi-loopback.exe <output.wav>                       single continuous file (normal recording)
-//   wasapi-loopback.exe --segments <outDir> <segSeconds>   rolling N-second WAV segments (live mode) —
-//                                                            each finalized segment is immediately valid,
-//                                                            and <outDir>/segments.jsonl gets one JSON line
-//                                                            per completed segment: {index,file,startMs,durationMs}
+//   wasapi-loopback.exe [--exclude-process <name>] <output.wav>
+//   wasapi-loopback.exe [--exclude-process <name>] --segments <outDir> <segSeconds>
+//
+//   --exclude-process <name>   Leave one app's audio out of the capture (e.g. "Spotify.exe")
+//                               while still capturing everything else on the default output
+//                               device — uses Windows' per-process loopback exclusion
+//                               (Windows 10 2004+ / Windows 11). Matches by process name;
+//                               excludes that process's whole child-process tree. If no
+//                               running process matches, falls back to capturing everything.
+//
+// Segmented mode: rolling N-second WAV segments (live mode) — each finalized segment is
+// immediately valid, and <outDir>/segments.jsonl gets one JSON line per completed segment:
+// {index,file,startMs,durationMs}
 //
 // Stops on: a line/EOF on stdin (the host writes to stdin to stop) or Ctrl+C.
 //
 // Built with the .NET Framework csc.exe that ships with Windows — no NuGet packages.
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -27,14 +37,47 @@ internal static class Program
     private const uint AUDCLNT_STREAMFLAGS_LOOPBACK = 0x00020000;
     private const uint AUDCLNT_BUFFERFLAGS_SILENT = 0x2;
 
+    private const string VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK = "VAD\\Process_Loopback";
+    private const int AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK = 1;
+    private const int PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE = 1;
+    private const ushort VT_BLOB = 65;
+
     private static volatile bool _stop = false;
+
+    private const uint COINIT_MULTITHREADED = 0x0;
+    private const int RO_INIT_MULTITHREADED = 1;
+
+    [DllImport("ole32.dll")]
+    private static extern int CoInitializeEx(IntPtr pvReserved, uint dwCoInit);
+
+    [DllImport("combase.dll")]
+    private static extern int RoInitialize(int initType);
 
     private static int Main(string[] args)
     {
+        CoInitializeEx(IntPtr.Zero, COINIT_MULTITHREADED);
+        RoInitialize(RO_INIT_MULTITHREADED);
+
+        string excludeProcess = null;
+        var rest = new List<string>();
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--exclude-process")
+            {
+                if (i + 1 >= args.Length) { Console.Error.WriteLine("--exclude-process requires a process name"); return 2; }
+                excludeProcess = args[++i];
+            }
+            else
+            {
+                rest.Add(args[i]);
+            }
+        }
+        args = rest.ToArray();
+
         if (args.Length < 1)
         {
-            Console.Error.WriteLine("Usage: wasapi-loopback.exe <output.wav>");
-            Console.Error.WriteLine("       wasapi-loopback.exe --segments <outDir> <segSeconds>");
+            Console.Error.WriteLine("Usage: wasapi-loopback.exe [--exclude-process <name>] <output.wav>");
+            Console.Error.WriteLine("       wasapi-loopback.exe [--exclude-process <name>] --segments <outDir> <segSeconds>");
             return 2;
         }
 
@@ -46,7 +89,7 @@ internal static class Program
 
         try
         {
-            var audio = SetupAudio();
+            var audio = SetupAudio(excludeProcess);
             if (args[0] == "--segments")
             {
                 if (args.Length < 3) { Console.Error.WriteLine("--segments requires <outDir> <segSeconds>"); return 2; }
@@ -82,7 +125,26 @@ internal static class Program
         public SampleType Type;
     }
 
-    private static AudioSetup SetupAudio()
+    private static AudioSetup SetupAudio(string excludeProcessName)
+    {
+        if (!string.IsNullOrEmpty(excludeProcessName))
+        {
+            int pid = ResolveTargetPid(excludeProcessName);
+            if (pid > 0)
+            {
+                Console.Error.WriteLine(string.Format(
+                    "[wasapi] excluding \"{0}\" (pid {1} and its child processes) from system-audio capture",
+                    excludeProcessName, pid));
+                return SetupProcessExcludedAudio(pid);
+            }
+            Console.Error.WriteLine(string.Format(
+                "[wasapi] --exclude-process \"{0}\": no running process found, capturing everything",
+                excludeProcessName));
+        }
+        return SetupDefaultEndpointAudio();
+    }
+
+    private static AudioSetup SetupDefaultEndpointAudio()
     {
         var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
         IMMDevice device;
@@ -92,13 +154,118 @@ internal static class Program
         object clientObj;
         Guid iidAudioClient = typeof(IAudioClient).GUID;
         Marshal.ThrowExceptionForHR(device.Activate(ref iidAudioClient, 1 /*CLSCTX_INPROC_SERVER*/, IntPtr.Zero, out clientObj));
-        var audioClient = (IAudioClient)clientObj;
+        return BuildAudioSetup((IAudioClient)clientObj);
+    }
 
+    /// Resolves a process name (e.g. "Spotify.exe" or "Spotify") to the PID of its
+    /// longest-running matching instance — the most likely root of the app's process tree.
+    private static int ResolveTargetPid(string processName)
+    {
+        string name = processName;
+        if (name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) name = name.Substring(0, name.Length - 4);
+
+        Process[] procs;
+        try { procs = Process.GetProcessesByName(name); }
+        catch { return 0; }
+        if (procs.Length == 0) return 0;
+
+        Process root = procs[0];
+        DateTime? earliest = TryGetStartTime(root);
+        for (int i = 1; i < procs.Length; i++)
+        {
+            DateTime? t = TryGetStartTime(procs[i]);
+            if (t.HasValue && (!earliest.HasValue || t.Value < earliest.Value))
+            {
+                root = procs[i];
+                earliest = t;
+            }
+        }
+        return root.Id;
+    }
+
+    private static DateTime? TryGetStartTime(Process p)
+    {
+        try { return p.StartTime; } catch { return null; }
+    }
+
+    /// Activates the Windows per-process loopback virtual device, configured to capture
+    /// everything on the default render endpoint EXCEPT the given process's tree.
+    private static AudioSetup SetupProcessExcludedAudio(int targetPid)
+    {
+        var activationParams = new AUDIOCLIENT_ACTIVATION_PARAMS
+        {
+            ActivationType = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK,
+            TargetProcessId = (uint)targetPid,
+            ProcessLoopbackMode = PROCESS_LOOPBACK_MODE_EXCLUDE_TARGET_PROCESS_TREE,
+        };
+        int paramsSize = Marshal.SizeOf(typeof(AUDIOCLIENT_ACTIVATION_PARAMS));
+        IntPtr pParams = Marshal.AllocHGlobal(paramsSize);
+        try
+        {
+            Marshal.StructureToPtr(activationParams, pParams, false);
+            var propvariant = new PROPVARIANT_BLOB
+            {
+                vt = VT_BLOB,
+                blobSize = (uint)paramsSize,
+                blobData = pParams,
+            };
+
+            Guid iidAudioClient = typeof(IAudioClient).GUID;
+            var handler = new LoopbackActivationHandler();
+            IActivateAudioInterfaceAsyncOperation asyncOp;
+            Marshal.ThrowExceptionForHR(Mmdevapi.ActivateAudioInterfaceAsync(
+                VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, ref iidAudioClient, ref propvariant, handler, out asyncOp));
+            handler.Wait();
+            Marshal.ThrowExceptionForHR(handler.Hr);
+
+            return BuildProcessLoopbackAudioSetup((IAudioClient)handler.Iface);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pParams);
+        }
+    }
+
+    private static AudioSetup BuildAudioSetup(IAudioClient audioClient)
+    {
         IntPtr pFormat;
         Marshal.ThrowExceptionForHR(audioClient.GetMixFormat(out pFormat));
         var fmt = (WAVEFORMATEX)Marshal.PtrToStructure(pFormat, typeof(WAVEFORMATEX));
         SampleType sampleType = DetectSampleType(pFormat, fmt);
+        return FinishAudioSetup(audioClient, pFormat, fmt, sampleType);
+    }
 
+    /// The per-process-loopback virtual device doesn't implement GetMixFormat (E_NOTIMPL) —
+    /// it has no single "real" endpoint format to report. Supply IEEE-float 48kHz stereo,
+    /// which is what the shared audio engine mixes to internally regardless of hardware format.
+    private static AudioSetup BuildProcessLoopbackAudioSetup(IAudioClient audioClient)
+    {
+        const ushort WAVE_FORMAT_IEEE_FLOAT = 3;
+        var fmt = new WAVEFORMATEX
+        {
+            wFormatTag = WAVE_FORMAT_IEEE_FLOAT,
+            nChannels = 2,
+            nSamplesPerSec = 48000,
+            wBitsPerSample = 32,
+            nBlockAlign = 8, // 2 channels * 4 bytes
+            nAvgBytesPerSec = 48000u * 8,
+            cbSize = 0,
+        };
+        IntPtr pFormat = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(WAVEFORMATEX)));
+        try
+        {
+            Marshal.StructureToPtr(fmt, pFormat, false);
+            SampleType sampleType = DetectSampleType(pFormat, fmt);
+            return FinishAudioSetup(audioClient, pFormat, fmt, sampleType);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(pFormat);
+        }
+    }
+
+    private static AudioSetup FinishAudioSetup(IAudioClient audioClient, IntPtr pFormat, WAVEFORMATEX fmt, SampleType sampleType)
+    {
         long bufferDuration = REFTIMES_PER_SEC; // 1s buffer
         Marshal.ThrowExceptionForHR(audioClient.Initialize(
             AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_LOOPBACK, bufferDuration, 0, pFormat, Guid.Empty));
@@ -421,4 +588,78 @@ internal struct WAVEFORMATEX
     public ushort nBlockAlign;
     public ushort wBitsPerSample;
     public ushort cbSize;
+}
+
+// ----- per-process loopback capture (Windows 10 2004+ / Windows 11) -------
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct AUDIOCLIENT_ACTIVATION_PARAMS
+{
+    public int ActivationType;      // AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK = 1
+    public uint TargetProcessId;
+    public int ProcessLoopbackMode; // 0 = include process tree, 1 = exclude process tree
+}
+
+// A PROPVARIANT carrying a VT_BLOB payload — just enough of the union to pass
+// AUDIOCLIENT_ACTIVATION_PARAMS through ActivateAudioInterfaceAsync.
+[StructLayout(LayoutKind.Sequential)]
+internal struct PROPVARIANT_BLOB
+{
+    public ushort vt;
+    public ushort wReserved1;
+    public ushort wReserved2;
+    public ushort wReserved3;
+    public uint blobSize;
+    public IntPtr blobData;
+}
+
+[ComImport, Guid("41D949AB-9862-444A-80F6-C261334DA5EB"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IActivateAudioInterfaceCompletionHandler
+{
+    int ActivateCompleted(IActivateAudioInterfaceAsyncOperation activateOperation);
+}
+
+[ComImport, Guid("72A22D78-CDE4-431D-B8CC-843A71199B6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IActivateAudioInterfaceAsyncOperation
+{
+    int GetActivateResult(out int activateResult, [MarshalAs(UnmanagedType.IUnknown)] out object activatedInterface);
+}
+
+// Marker interface (no methods) declaring an object free-threaded/apartment-agnostic.
+// ActivateAudioInterfaceAsync rejects its completion handler outright (E_ILLEGAL_METHOD_CALL)
+// unless the handler also implements this.
+[ComImport, Guid("94EA2B94-E9CC-49E0-C0FF-EE64CA8F5B90"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAgileObject { }
+
+// Receives the ActivateAudioInterfaceAsync callback (fired on a thread-pool thread) and
+// hands the result back to the caller via a wait handle.
+internal class LoopbackActivationHandler : IActivateAudioInterfaceCompletionHandler, IAgileObject
+{
+    private readonly ManualResetEvent _done = new ManualResetEvent(false);
+    public int Hr;
+    public object Iface;
+
+    public int ActivateCompleted(IActivateAudioInterfaceAsyncOperation activateOperation)
+    {
+        int hr;
+        object iface;
+        activateOperation.GetActivateResult(out hr, out iface);
+        Hr = hr;
+        Iface = iface;
+        _done.Set();
+        return 0; // S_OK
+    }
+
+    public void Wait() { _done.WaitOne(); }
+}
+
+internal static class Mmdevapi
+{
+    [DllImport("Mmdevapi.dll")]
+    internal static extern int ActivateAudioInterfaceAsync(
+        [MarshalAs(UnmanagedType.LPWStr)] string deviceInterfacePath,
+        ref Guid riid,
+        ref PROPVARIANT_BLOB activationParams,
+        IActivateAudioInterfaceCompletionHandler completionHandler,
+        out IActivateAudioInterfaceAsyncOperation activationOperation);
 }

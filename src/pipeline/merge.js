@@ -7,9 +7,18 @@
  * @param {number} args.systemOffsetSec  add to every system timestamp to align the two streams
  * @param {object} args.labels  { me, participants }
  * @param {boolean} args.coalesce  merge consecutive same-speaker segments into one turn
+ * @param {number} args.maxSentencesPerTurn  start a new turn after this many sentences, even if
+ *   the same speaker keeps talking with no interruption (keeps long monologues readable)
  * @returns {Array<{start,end,speaker,text}>}
  */
-export function mergeTranscripts({ micSegments, systemSegments, systemOffsetSec = 0, labels, coalesce = true }) {
+export function mergeTranscripts({
+  micSegments,
+  systemSegments,
+  systemOffsetSec = 0,
+  labels,
+  coalesce = true,
+  maxSentencesPerTurn = 6,
+}) {
   const tagged = [
     ...micSegments.map((s) => ({ ...s, speaker: labels.me })),
     ...systemSegments.map((s) => ({
@@ -22,19 +31,36 @@ export function mergeTranscripts({ micSegments, systemSegments, systemOffsetSec 
     .filter((s) => s.text && s.text.trim())
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
-  return coalesce ? coalesceTurns(tagged) : tagged;
+  return coalesce ? coalesceTurns(tagged, maxSentencesPerTurn) : tagged;
 }
 
-/** Collapse adjacent segments from the same speaker into a single turn. */
-function coalesceTurns(segments) {
+const SENTENCE_END_RE = /[^.!?]*[.!?]+/g;
+
+/** Rough sentence count for a chunk of transcript text (splits on . ! ?). */
+function countSentences(text) {
+  const matches = text.match(SENTENCE_END_RE);
+  if (matches) return matches.length;
+  return text.trim() ? 1 : 0;
+}
+
+/**
+ * Collapse adjacent segments from the same speaker into a single turn, but start a fresh turn
+ * once the current one reaches `maxSentencesPerTurn` — otherwise one speaker talking uninterrupted
+ * for minutes becomes a single unreadable wall of text under one timestamp.
+ */
+function coalesceTurns(segments, maxSentencesPerTurn) {
   const out = [];
+  let sentenceCount = 0;
   for (const seg of segments) {
     const last = out[out.length - 1];
-    if (last && last.speaker === seg.speaker) {
+    const segSentences = countSentences(seg.text);
+    if (last && last.speaker === seg.speaker && (!maxSentencesPerTurn || sentenceCount < maxSentencesPerTurn)) {
       last.end = Math.max(last.end, seg.end);
       last.text = `${last.text} ${seg.text}`.trim();
+      sentenceCount += segSentences;
     } else {
       out.push({ ...seg });
+      sentenceCount = segSentences;
     }
   }
   return out;

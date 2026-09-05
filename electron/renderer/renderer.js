@@ -140,7 +140,11 @@ function renderEmpty() {
 async function openRecordPanel() {
   state.activeId = null;
   renderMeetingList();
-  const devices = await J.listDevices().catch(() => []);
+  const [devices, settings] = await Promise.all([
+    J.listDevices().catch(() => []),
+    J.getSettings().catch(() => state.settings),
+  ]);
+  state.settings = settings || state.settings;
   const mics = devices.filter((d) => !d.isLoopbackCandidate);
   const savedMic = state.settings?.devices?.mic;
   const today = new Date().toISOString().slice(0, 10);
@@ -157,9 +161,32 @@ async function openRecordPanel() {
         <select id="recMic">${mics.map((m) => `<option value="${esc(m.id)}" ${m.id === savedMic ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>
         ${mics.length ? '' : '<div class="hint" style="color:var(--warn)">No microphone detected.</div>'}
       </div>
+      <div class="field" id="sysAudioField"></div>
       <button class="btn primary" id="startRec" ${mics.length ? '' : 'disabled'}>● Start recording</button>
     </div>`;
   $('#startRec')?.addEventListener('click', startRecording);
+  renderSysAudioStatus();
+}
+
+function renderSysAudioStatus() {
+  const el = $('#sysAudioField');
+  if (!el) return;
+  const sa = state.settings?.systemAudio || {};
+  const name = sa.excludeProcess;
+  const on = name && sa.enabled !== false;
+  el.innerHTML = name
+    ? `<label>System audio</label>
+       <div class="toggle-row" style="margin:0;">
+         <span>${on ? `🔇 Excluding <strong>${esc(name)}</strong> — everything else is captured` : `Excluding <strong>${esc(name)}</strong> is off — capturing everything`}</span>
+         <input type="checkbox" id="sysAudioToggle" ${on ? 'checked' : ''} />
+       </div>`
+    : `<label>System audio</label><div class="hint" style="margin:0;">Capturing everything. Set an app to exclude (e.g. Spotify) in Settings.</div>`;
+  $('#sysAudioToggle')?.addEventListener('change', async (e) => {
+    const enabled = e.target.checked;
+    await J.saveSettings({ systemAudio: { enabled } });
+    state.settings = await J.getSettings().catch(() => state.settings);
+    renderSysAudioStatus();
+  });
 }
 
 async function startRecording() {
@@ -437,6 +464,11 @@ async function openSettings() {
       <div class="field"><label>Your label</label><input type="text" id="setMe" value="${esc(s.labels?.me || 'Me')}" /></div>
       <div class="field"><label>Others label</label><input type="text" id="setOthers" value="${esc(s.labels?.participants || 'Participants')}" /></div>
     </div>
+    <div class="field">
+      <label>Break up long turns after (sentences)</label>
+      <input type="number" id="setMaxSentences" min="1" max="50" value="${esc(s.maxSentencesPerTurn ?? 6)}" style="max-width:120px;" />
+      <div class="hint">If one person talks for a while with no reply, the transcript starts a new paragraph after this many sentences instead of one long block.</div>
+    </div>
 
     <div class="section-title">Storage</div>
     <div class="field">
@@ -446,6 +478,16 @@ async function openSettings() {
       <div class="hint">${st.storage ? `Using ${st.storage.usedGB} GB of ${st.storage.capGB} GB. Oldest audio is cleared past the cap (transcripts kept).` : ''}</div>
       <button class="btn" id="delAllAudio" type="button" style="margin-top:10px;">🗑 Delete all recording audio</button>
       <div class="hint">Frees the most space. Transcripts &amp; insights are kept; meetings stay listed.</div>
+    </div>
+
+    <div class="section-title">System Audio</div>
+    <div class="field toggle-row">
+      <label style="margin:0;">Exclude an app from system-audio capture</label>
+      <input type="checkbox" id="setExcludeEnabled" ${s.systemAudio?.enabled !== false ? 'checked' : ''} />
+    </div>
+    <div class="field">
+      <input type="text" id="setExcludeProcess" value="${esc(s.systemAudio?.excludeProcess || '')}" placeholder="e.g. Spotify.exe" />
+      <div class="hint">That app's sound is left out of the recording; everything else you hear is still captured. Only one app at a time. Windows 10 2004+ / Windows 11 only. Leave blank (or turn the toggle off) to capture everything.</div>
     </div>
 
     <div class="section-title">Live Mode (while recording)</div>
@@ -504,7 +546,12 @@ async function saveSettings() {
     model: $('#setModel').value,
     language: $('#setLang').value.trim() || 'auto',
     labels: { me: $('#setMe').value.trim() || 'Me', participants: $('#setOthers').value.trim() || 'Participants' },
+    maxSentencesPerTurn: Number($('#setMaxSentences').value) || 6,
     storage: { maxRecordingsGB: Number($('#setCap').value) || 20 },
+    systemAudio: {
+      excludeProcess: $('#setExcludeProcess').value.trim() || null,
+      enabled: $('#setExcludeEnabled').checked,
+    },
     live: {
       summaryProvider: $('#setLiveProvider').value,
       summaryIntervalSec: Number($('#setLiveInterval').value) || 45,
