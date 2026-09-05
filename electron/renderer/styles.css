@@ -173,7 +173,7 @@ body {
 .modal-card { width: 560px; max-height: 86vh; background: var(--card); border-radius: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border); }
 .modal-head h2 { font-size: 18px; }
-.modal-body { padding: 18px 22px; overflow-y: auto; }
+.modal-body { padding: 18px 22px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 14px 22px; border-top: 1px solid var(--border); }
 .saved-msg { color: var(--good); font-size: 13px; margin-right: auto; }
 
